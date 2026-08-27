@@ -160,6 +160,82 @@ export default function App() {
         setTimeout(() => setToastMsg(''), 3500);
     };
 
+    // =========================================================================
+    // SISTEMA PULL-TO-REFRESH (PWA & MOBILE IPHONE)
+    // =========================================================================
+    const [pullY, setPullY] = useState(0);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const touchStartRef = useRef(0);
+    const isPullingRef = useRef(false);
+
+    useEffect(() => {
+        const handleTouchStart = (e) => {
+            if (window.scrollY <= 5 && !isRefreshing) {
+                touchStartRef.current = e.touches[0].clientY;
+                isPullingRef.current = true;
+            } else {
+                isPullingRef.current = false;
+            }
+        };
+
+        const handleTouchMove = (e) => {
+            if (!isPullingRef.current || isRefreshing) return;
+            const currentY = e.touches[0].clientY;
+            const diff = currentY - touchStartRef.current;
+            if (diff > 0 && window.scrollY <= 5) {
+                // Efeito elástico suave estilo iOS
+                const pullDistance = Math.min(diff * 0.45, 90);
+                setPullY(pullDistance);
+                if (pullDistance > 15 && e.cancelable) {
+                    e.preventDefault();
+                }
+            } else {
+                setPullY(0);
+            }
+        };
+
+        const handleTouchEnd = async () => {
+            if (!isPullingRef.current) return;
+            isPullingRef.current = false;
+            if (pullY >= 50 && !isRefreshing) {
+                setIsRefreshing(true);
+                setPullY(65);
+                if (navigator.vibrate) {
+                    try { navigator.vibrate(25); } catch (e) {}
+                }
+                try {
+                    if (supabaseUser) {
+                        await loadCloudData(supabaseUser);
+                    } else {
+                        const savedT = localStorage.getItem('fp_transactions');
+                        if (savedT) setTransactions(JSON.parse(savedT));
+                        await new Promise(r => setTimeout(r, 600));
+                    }
+                    showToast("Dados e finanças sincronizados!");
+                } catch (err) {
+                    console.error('Erro ao atualizar:', err);
+                } finally {
+                    setTimeout(() => {
+                        setIsRefreshing(false);
+                        setPullY(0);
+                    }, 400);
+                }
+            } else {
+                setPullY(0);
+            }
+        };
+
+        window.addEventListener('touchstart', handleTouchStart, { passive: true });
+        window.addEventListener('touchmove', handleTouchMove, { passive: false });
+        window.addEventListener('touchend', handleTouchEnd);
+
+        return () => {
+            window.removeEventListener('touchstart', handleTouchStart);
+            window.removeEventListener('touchmove', handleTouchMove);
+            window.removeEventListener('touchend', handleTouchEnd);
+        };
+    }, [isRefreshing, supabaseUser, pullY]);
+
     const [currentDate, setCurrentDate] = useState(new Date());
     const [activeTab, setActiveTab] = useState('inicio'); // 'inicio' | 'analise' | 'calendario' | 'investimentos'
     const [analysisView, setAnalysisView] = useState('mes');
@@ -1107,6 +1183,34 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
 
     return (
         <div className={isDarkMode ? 'dark' : ''}>
+            {/* INDICADOR PULL-TO-REFRESH ESTILO IOS */}
+            <div
+                className="fixed top-0 left-0 right-0 z-50 flex justify-center pointer-events-none transition-transform duration-200 ease-out"
+                style={{
+                    transform: `translateY(${pullY > 0 ? pullY - 10 : -80}px)`,
+                    opacity: pullY > 10 ? 1 : 0
+                }}
+            >
+                <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-4 py-2 rounded-full shadow-2xl border border-slate-200/80 dark:border-slate-800 flex items-center gap-2.5 text-xs font-bold text-slate-800 dark:text-slate-200 transition-all">
+                    {isRefreshing ? (
+                        <>
+                            <RefreshCw size={15} className="animate-spin text-blue-600 dark:text-blue-400" />
+                            <span>Atualizando finanças...</span>
+                        </>
+                    ) : pullY >= 50 ? (
+                        <>
+                            <ArrowDown size={15} className="text-emerald-500 transition-transform duration-200 rotate-180" />
+                            <span className="text-emerald-600 dark:text-emerald-400">Solte para atualizar</span>
+                        </>
+                    ) : (
+                        <>
+                            <ArrowDown size={15} className="text-blue-500 transition-transform duration-200" style={{ transform: `rotate(${Math.min(pullY * 3.6, 180)}deg)` }} />
+                            <span>Puxe para atualizar</span>
+                        </>
+                    )}
+                </div>
+            </div>
+
             {toastMsg && (
                 <div className="fixed top-6 left-1/2 -translate-x-1/2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-6 py-3 rounded-full shadow-2xl z-[100] animate-in fade-in slide-in-from-top-4 font-bold text-sm flex items-center gap-2 border border-slate-700/50">
                     <CheckCircle2 className="text-emerald-400 dark:text-emerald-600 shrink-0" size={18} />
