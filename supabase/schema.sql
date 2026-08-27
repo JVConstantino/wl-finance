@@ -5,7 +5,7 @@
 
 -- 1. TABELA DE GRUPOS FAMILIARES / CASAL
 CREATE TABLE IF NOT EXISTS public.family_groups (
-    id TEXT PRIMARY KEY, -- ex: 'CASAL-LUIS-2026'
+    id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     created_by UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS public.family_members (
     family_id TEXT REFERENCES public.family_groups(id) ON DELETE CASCADE NOT NULL,
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
     user_email TEXT,
-    role TEXT DEFAULT 'member', -- 'owner' | 'member'
+    role TEXT DEFAULT 'member',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     CONSTRAINT unique_family_user UNIQUE (family_id, user_id)
 );
@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS public.transactions (
     id TEXT PRIMARY KEY,
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL DEFAULT auth.uid(),
     family_id TEXT,
-    paid_by TEXT DEFAULT 'conjunto', -- 'marido' | 'esposa' | 'conjunto'
+    paid_by TEXT DEFAULT 'conjunto',
     created_by_email TEXT,
     type TEXT NOT NULL CHECK (type IN ('entrada', 'saida', 'investimento')),
     amount NUMERIC(12,2) NOT NULL,
@@ -46,6 +46,11 @@ CREATE TABLE IF NOT EXISTS public.transactions (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- Adicionar colunas caso a tabela já existisse antes
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS family_id TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS paid_by TEXT DEFAULT 'conjunto';
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS created_by_email TEXT;
+
 -- 4. TABELA DE CONTAS E CARTEIRAS
 CREATE TABLE IF NOT EXISTS public.accounts (
     id TEXT PRIMARY KEY,
@@ -56,6 +61,7 @@ CREATE TABLE IF NOT EXISTS public.accounts (
     color TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS family_id TEXT;
 
 -- 5. TABELA DE REGRAS RECORRENTES (DESPESAS/RECEITAS FIXAS)
 CREATE TABLE IF NOT EXISTS public.repeating_rules (
@@ -70,6 +76,7 @@ CREATE TABLE IF NOT EXISTS public.repeating_rules (
     account_id TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+ALTER TABLE public.repeating_rules ADD COLUMN IF NOT EXISTS family_id TEXT;
 
 -- 6. TABELA DE METAS MENSAIS POR CATEGORIA
 CREATE TABLE IF NOT EXISTS public.monthly_goals (
@@ -81,6 +88,7 @@ CREATE TABLE IF NOT EXISTS public.monthly_goals (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     CONSTRAINT unique_user_category_goal UNIQUE (user_id, category)
 );
+ALTER TABLE public.monthly_goals ADD COLUMN IF NOT EXISTS family_id TEXT;
 
 -- 7. TABELA DE CATEGORIAS PERSONALIZADAS
 CREATE TABLE IF NOT EXISTS public.custom_categories (
@@ -92,9 +100,10 @@ CREATE TABLE IF NOT EXISTS public.custom_categories (
     color TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+ALTER TABLE public.custom_categories ADD COLUMN IF NOT EXISTS family_id TEXT;
 
 -- ==============================================================================
--- ATIVAÇÃO DE ROW LEVEL SECURITY (RLS) - SEGURANÇA POR USUÁRIO E CASAL
+-- ATIVAÇÃO DE ROW LEVEL SECURITY (RLS) - SEGURANÇA MULTI-DISPOSITIVO E CASAL
 -- ==============================================================================
 
 ALTER TABLE public.family_groups ENABLE ROW LEVEL SECURITY;
@@ -131,7 +140,8 @@ WITH CHECK (
     OR family_id IN (SELECT family_id FROM public.get_my_family_ids())
 );
 
--- Políticas para TRANSACTIONS (Pessoal + Família Compartilhada)
+-- Políticas para TRANSACTIONS
+DROP POLICY IF EXISTS "Usuários gerenciam suas transações" ON public.transactions;
 DROP POLICY IF EXISTS "Usuários e familiares gerenciam transações" ON public.transactions;
 CREATE POLICY "Usuários e familiares gerenciam transações" 
 ON public.transactions FOR ALL 
@@ -145,6 +155,7 @@ WITH CHECK (
 );
 
 -- Políticas para ACCOUNTS
+DROP POLICY IF EXISTS "Usuários gerenciam suas contas" ON public.accounts;
 DROP POLICY IF EXISTS "Usuários e familiares gerenciam contas" ON public.accounts;
 CREATE POLICY "Usuários e familiares gerenciam contas" 
 ON public.accounts FOR ALL 
@@ -158,6 +169,7 @@ WITH CHECK (
 );
 
 -- Políticas para REPEATING_RULES
+DROP POLICY IF EXISTS "Usuários gerenciam suas regras" ON public.repeating_rules;
 DROP POLICY IF EXISTS "Usuários e familiares gerenciam regras" ON public.repeating_rules;
 CREATE POLICY "Usuários e familiares gerenciam regras" 
 ON public.repeating_rules FOR ALL 
@@ -171,6 +183,7 @@ WITH CHECK (
 );
 
 -- Políticas para MONTHLY_GOALS
+DROP POLICY IF EXISTS "Usuários gerenciam suas metas" ON public.monthly_goals;
 DROP POLICY IF EXISTS "Usuários e familiares gerenciam metas" ON public.monthly_goals;
 CREATE POLICY "Usuários e familiares gerenciam metas" 
 ON public.monthly_goals FOR ALL 
@@ -184,6 +197,7 @@ WITH CHECK (
 );
 
 -- Políticas para CUSTOM_CATEGORIES
+DROP POLICY IF EXISTS "Usuários gerenciam suas categorias" ON public.custom_categories;
 DROP POLICY IF EXISTS "Usuários e familiares gerenciam categorias" ON public.custom_categories;
 CREATE POLICY "Usuários e familiares gerenciam categorias" 
 ON public.custom_categories FOR ALL 
