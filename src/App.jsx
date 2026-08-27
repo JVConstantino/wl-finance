@@ -8,10 +8,7 @@ import {
     CreditCard, BarChart3, Lightbulb, UploadCloud, FileText,
     CalendarDays, MessageSquare, Send, Users, Camera, Moon, Sun,
     Wifi, History, Sparkles, Activity, ArrowRightLeft, Key, Check, Info,
-<<<<<<< HEAD
-    Download, ShieldCheck, Layers, ChevronDown
-} from 'lucide-react';
-=======
+
     Download, ShieldCheck, Layers, ChevronDown, Database, LogIn, LogOut, RefreshCw
 } from 'lucide-react';
 import {
@@ -21,7 +18,7 @@ import {
     syncUpsertAccount, syncDeleteAccount, syncUpsertRule, syncDeleteRule,
     syncUpsertGoal, syncUpsertCategory, syncDeleteCategory, migrateAllLocalData
 } from './lib/supabase';
->>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
+
 
 // Configurações Base
 const baseCategories = {
@@ -252,9 +249,7 @@ export default function App() {
         accountId: 'acc_main'
     });
 
-<<<<<<< HEAD
-    // Salvar no LocalStorage automaticamente
-=======
+
     // =========================================================================
     // ESTADOS E SINCRONIZAÇÃO SUPABASE (NUVEM & AUTH)
     // =========================================================================
@@ -444,7 +439,7 @@ export default function App() {
     };
 
     // Salvar no LocalStorage automaticamente (backup offline)
->>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
+
     useEffect(() => {
         localStorage.setItem('fp_transactions', JSON.stringify(transactions));
     }, [transactions]);
@@ -699,22 +694,20 @@ export default function App() {
             }
             return [tData, ...prev];
         });
-<<<<<<< HEAD
-=======
+
         if (supabaseUser) {
             syncUpsertTransaction(tData, supabaseUser.id);
         }
->>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
+
     };
 
     const deleteTransaction = (id) => {
         setTransactions(prev => prev.filter(t => t.id !== id));
-<<<<<<< HEAD
-=======
+
         if (supabaseUser) {
             syncDeleteTransaction(id, supabaseUser.id);
         }
->>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
+
     };
 
     const saveRule = (rData) => {
@@ -727,22 +720,20 @@ export default function App() {
             }
             return [...prev, rData];
         });
-<<<<<<< HEAD
-=======
+
         if (supabaseUser) {
             syncUpsertRule(rData, supabaseUser.id);
         }
->>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
+
     };
 
     const deleteRule = (ruleId) => {
         setRepeatingRules(prev => prev.filter(r => r.id !== ruleId));
-<<<<<<< HEAD
-=======
+
         if (supabaseUser) {
             syncDeleteRule(ruleId, supabaseUser.id);
         }
->>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
+
     };
 
     const handleSubmit = (e) => {
@@ -1230,10 +1221,7 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                         </div>
                     </div>
 
-<<<<<<< HEAD
-                    {/* Rodapé da Sidebar: Dark Mode & Perfil */}
-                    <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
-=======
+
                     {/* Rodapé da Sidebar: Dark Mode & Perfil / Supabase */}
                     <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
                         {/* Status da Nuvem Supabase */}
@@ -1308,7 +1296,7 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                         </div>
 
                         {/* Modo Escuro */}
->>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
+
                         <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-2xl border border-slate-100 dark:border-slate-800">
                             <span className="text-xs font-bold text-slate-600 dark:text-slate-300 ml-2">Tema {isDarkMode ? 'Escuro' : 'Claro'}</span>
                             <button
@@ -1319,19 +1307,8 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                 {isDarkMode ? <Sun size={16} className="text-amber-500" /> : <Moon size={16} className="text-indigo-500" />}
                             </button>
                         </div>
-<<<<<<< HEAD
 
-                        <div className="flex items-center gap-3 px-2">
-                            <div className="w-10 h-10 rounded-2xl bg-blue-600/10 dark:bg-blue-400/10 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black text-sm">
-                                <User size={18} />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <p className="text-xs font-black text-slate-800 dark:text-white truncate">Minha Carteira</p>
-                                <p className="text-[10px] font-bold text-slate-400 truncate">Sessão Local Segura</p>
-                            </div>
-                        </div>
-=======
->>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
+
                     </div>
                 </aside>
 
@@ -1438,35 +1415,7 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                             <div className="relative bg-white dark:bg-slate-900 w-72 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 p-4 space-y-2 z-50 animate-in fade-in zoom-in-95">
                                 <div className="px-2 py-2 border-b border-slate-100 dark:border-slate-800">
                                     <p className="text-xs font-black text-slate-800 dark:text-white">Minha Conta</p>
-<<<<<<< HEAD
-                                    <p className="text-[10px] text-slate-400">Armazenamento Local Ativo</p>
-                                </div>
-                                <button
-                                    onClick={() => { setIsDarkMode(!isDarkMode); setShowProfileMenu(false); }}
-                                    className="w-full flex items-center justify-between px-3 py-2 text-xs font-bold rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
-                                >
-                                    <span>Modo {isDarkMode ? 'Claro' : 'Escuro'}</span>
-                                    {isDarkMode ? <Sun size={16} className="text-amber-500" /> : <Moon size={16} className="text-indigo-500" />}
-                                </button>
-                                <button
-                                    onClick={() => { setShowProfileMenu(false); setIsCategoryManagerOpen(true); }}
-                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
-                                >
-                                    <Tag size={16} className="text-blue-500" /> Categorias
-                                </button>
-                                <button
-                                    onClick={() => { setShowProfileMenu(false); setIsFamilyModalOpen(true); }}
-                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
-                                >
-                                    <Users size={16} className="text-emerald-500" /> Modo Família
-                                </button>
-                                <button
-                                    onClick={() => { setShowProfileMenu(false); setApiKeyInput(geminiApiKey); setIsApiKeyModalOpen(true); }}
-                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
-                                >
-                                    <Key size={16} className="text-indigo-500" /> Chave Gemini IA
-                                </button>
-=======
+
                                     <p className="text-[10px] text-slate-400">
                                         {supabaseUser ? `Conectado: ${supabaseUser.email}` : 'Armazenamento Local'}
                                     </p>
@@ -1552,7 +1501,7 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                         <Key size={16} className="text-indigo-500" /> Chave Gemini IA
                                     </button>
                                 </div>
->>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
+
                             </div>
                         </div>
                     )}
@@ -2608,12 +2557,11 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                 e.preventDefault();
                                 const val = parseFloat(goalAmountInput) || 0;
                                 setMonthlyGoals(prev => ({ ...prev, [editingCategoryGoal]: val }));
-<<<<<<< HEAD
-=======
+
                                 if (supabaseUser) {
                                     syncUpsertGoal(editingCategoryGoal, val, supabaseUser.id);
                                 }
->>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
+
                                 setIsGoalModalOpen(false);
                                 showToast(`Meta de ${editingCategoryGoal} atualizada!`);
                             }}>
@@ -2636,12 +2584,11 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                                 delete updated[editingCategoryGoal];
                                                 return updated;
                                             });
-<<<<<<< HEAD
-=======
+
                                             if (supabaseUser) {
                                                 syncUpsertGoal(editingCategoryGoal, 0, supabaseUser.id);
                                             }
->>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
+
                                             setIsGoalModalOpen(false);
                                             showToast("Meta removida!");
                                         }}
@@ -2683,15 +2630,13 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                     showToast("Categoria já existe.");
                                     return;
                                 }
-<<<<<<< HEAD
-                                setCustomCategories(prev => [...prev, { name: trimmed, type: newCatData.type, color: newCatData.color }]);
-=======
+
                                 const newCat = { id: 'cat_' + Date.now(), name: trimmed, type: newCatData.type, color: newCatData.color };
                                 setCustomCategories(prev => [...prev, newCat]);
                                 if (supabaseUser) {
                                     syncUpsertCategory(newCat, supabaseUser.id);
                                 }
->>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
+
                                 setNewCatData({ name: '', type: 'saida', color: '#3b82f6' });
                                 showToast("Categoria adicionada!");
                             }} className="space-y-3 mb-6 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-3xl border border-slate-100 dark:border-slate-800">
@@ -2741,12 +2686,11 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                                 <button
                                                     onClick={() => {
                                                         setCustomCategories(prev => prev.filter(c => c.name !== cat.name));
-<<<<<<< HEAD
-=======
+
                                                         if (supabaseUser) {
                                                             syncDeleteCategory(cat.id || cat.name, supabaseUser.id);
                                                         }
->>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
+
                                                         showToast("Categoria removida.");
                                                     }}
                                                     className="text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 p-1.5 rounded-lg"
@@ -2890,56 +2834,7 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                     </div>
                 )}
 
-<<<<<<< HEAD
-                {/* Modal Confirmação de Exclusão */}
-                {transactionToDelete && (
-                    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-                        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setTransactionToDelete(null)}></div>
-                        <div className="relative bg-white dark:bg-slate-900 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl animate-in slide-in-from-bottom-full duration-300">
-                            <div className="flex items-center gap-3 mb-4">
-                                <div className="p-3 bg-rose-50 dark:bg-rose-950/40 text-rose-600 rounded-2xl">
-                                    <AlertTriangle size={24} />
-                                </div>
-                                <div>
-                                    <h3 className="font-black text-lg text-slate-800 dark:text-white">Excluir Registro?</h3>
-                                    <p className="text-xs text-slate-500">Esta ação não poderá ser desfeita.</p>
-                                </div>
-                            </div>
 
-                            <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl mb-4 border border-slate-100 dark:border-slate-800">
-                                <p className="text-sm font-extrabold text-slate-800 dark:text-white">{transactionToDelete.description}</p>
-                                <p className="text-xs text-slate-500">{transactionToDelete.category} • {formatCurrency(transactionToDelete.amount)}</p>
-                            </div>
-
-                            {transactionToDelete.isFromRepeatRule && (
-                                <div className="mb-4">
-                                    <label className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300 cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={cancelFutureRepeats}
-                                            onChange={(e) => setCancelFutureRepeats(e.target.checked)}
-                                            className="w-4 h-4 rounded text-rose-600"
-                                        />
-                                        Cancelar também os lançamentos automáticos futuros desta assinatura
-                                    </label>
-                                </div>
-                            )}
-
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={() => setTransactionToDelete(null)}
-                                    className="w-1/2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-bold rounded-2xl p-3.5 text-sm"
-                                >
-                                    Cancelar
-                                </button>
-                                <button
-                                    onClick={confirmDelete}
-                                    className="w-1/2 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-2xl p-3.5 text-sm shadow-md"
-                                >
-                                    Sim, Excluir
-                                </button>
-                            </div>
-=======
                 {/* Modal de Autenticação Supabase (Login / Cadastro / Esqueci a Senha) */}
                 {isAuthModalOpen && (
                     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -3141,7 +3036,7 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                     )}
                                 </div>
                             </form>
->>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
+
                         </div>
                     </div>
                 )}
