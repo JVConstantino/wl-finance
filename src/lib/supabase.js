@@ -2,28 +2,39 @@ import { createClient } from '@supabase/supabase-js';
 
 // Obter URL e Key das variáveis de ambiente ou do LocalStorage (permite configurar direto pelo app)
 export const getSupabaseConfig = () => {
-    let envUrl = import.meta.env.VITE_SUPABASE_URL || '';
-    let envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+    try {
+        let envUrl = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_URL) || '';
+        let envKey = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) || '';
 
-    let localUrl = localStorage.getItem('fp_supabase_url') || '';
-    let localKey = localStorage.getItem('fp_supabase_anon_key') || '';
+        let localUrl = '';
+        let localKey = '';
+        if (typeof window !== 'undefined' && window.localStorage) {
+            try {
+                localUrl = localStorage.getItem('fp_supabase_url') || '';
+                localKey = localStorage.getItem('fp_supabase_anon_key') || '';
+            } catch(e) {}
+        }
 
-    let url = (envUrl.trim() !== '') ? envUrl.trim() : localUrl.trim();
-    let key = (envKey.trim() !== '') ? envKey.trim() : localKey.trim();
+        let url = (envUrl.trim() !== '') ? envUrl.trim() : localUrl.trim();
+        let key = (envKey.trim() !== '') ? envKey.trim() : localKey.trim();
 
-    // Sanitização e limpeza de aspas e barras
-    url = url.replace(/['"]+/g, '').replace(/\/+$/, '');
-    key = key.replace(/['"]+/g, '');
+        // Sanitização e limpeza de aspas e barras
+        url = url.replace(/['"]+/g, '').replace(/\/+$/, '');
+        key = key.replace(/['"]+/g, '');
 
-    if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
-        url = `https://${url}`;
+        if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+            url = `https://${url}`;
+        }
+
+        return {
+            url,
+            key,
+            isConfigured: Boolean(url && key && url.includes('.supabase.co'))
+        };
+    } catch (err) {
+        console.warn('Erro ao ler configuração Supabase:', err);
+        return { url: '', key: '', isConfigured: false };
     }
-
-    return {
-        url,
-        key,
-        isConfigured: Boolean(url && key && url.includes('.supabase.co'))
-    };
 };
 
 export const saveSupabaseConfig = (url, key) => {

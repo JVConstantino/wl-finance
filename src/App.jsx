@@ -117,13 +117,22 @@ const initialSampleRules = [
     }
 ];
 
+// Helper para leitura segura do LocalStorage
+const safeGet = (key, fallback) => {
+    try {
+        if (typeof window === 'undefined' || !window.localStorage) return fallback;
+        const saved = localStorage.getItem(key);
+        if (!saved) return fallback;
+        const parsed = JSON.parse(saved);
+        return parsed !== null && parsed !== undefined ? parsed : fallback;
+    } catch (e) {
+        return fallback;
+    }
+};
+
 export default function App() {
-    const [isInitializing, setIsInitializing] = useState(true);
     const [showProfileMenu, setShowProfileMenu] = useState(false);
-    const [isDarkMode, setIsDarkMode] = useState(() => {
-        const saved = localStorage.getItem('fp_theme');
-        return saved ? JSON.parse(saved) : false;
-    });
+    const [isDarkMode, setIsDarkMode] = useState(() => safeGet('fp_theme', false));
 
     // PWA Install Prompt
     const [deferredPrompt, setDeferredPrompt] = useState(null);
@@ -257,12 +266,12 @@ export default function App() {
     const [isFamilyModalOpen, setIsFamilyModalOpen] = useState(false);
     const [familyCodeInput, setFamilyCodeInput] = useState('');
     const [activeFamilyCode, setActiveFamilyCode] = useState(() => {
-        return localStorage.getItem('fp_family_code') || null;
+        try { return localStorage.getItem('fp_family_code') || null; } catch(e) { return null; }
     });
 
     const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
     const [geminiApiKey, setGeminiApiKey] = useState(() => {
-        return localStorage.getItem('fp_gemini_key') || '';
+        try { return localStorage.getItem('fp_gemini_key') || ''; } catch(e) { return ''; }
     });
     const [apiKeyInput, setApiKeyInput] = useState('');
 
@@ -288,31 +297,12 @@ export default function App() {
     ]);
     const chatEndRef = useRef(null);
 
-    // Estados de Dados Principais (com persistência LocalStorage)
-    const [transactions, setTransactions] = useState(() => {
-        const saved = localStorage.getItem('fp_transactions');
-        return saved ? JSON.parse(saved) : initialSampleTransactions;
-    });
-
-    const [repeatingRules, setRepeatingRules] = useState(() => {
-        const saved = localStorage.getItem('fp_rules');
-        return saved ? JSON.parse(saved) : initialSampleRules;
-    });
-
-    const [monthlyGoals, setMonthlyGoals] = useState(() => {
-        const saved = localStorage.getItem('fp_goals');
-        return saved ? JSON.parse(saved) : { 'Casa': 2500, 'Alimentação': 1200, 'Transporte': 600, 'Lazer': 500 };
-    });
-
-    const [customCategories, setCustomCategories] = useState(() => {
-        const saved = localStorage.getItem('fp_custom_categories');
-        return saved ? JSON.parse(saved) : [];
-    });
-
-    const [accounts, setAccounts] = useState(() => {
-        const saved = localStorage.getItem('fp_accounts');
-        return saved ? JSON.parse(saved) : defaultAccounts;
-    });
+    // Estados de Dados Principais (com persistência LocalStorage segura)
+    const [transactions, setTransactions] = useState(() => safeGet('fp_transactions', initialSampleTransactions));
+    const [repeatingRules, setRepeatingRules] = useState(() => safeGet('fp_rules', initialSampleRules));
+    const [monthlyGoals, setMonthlyGoals] = useState(() => safeGet('fp_goals', { 'Casa': 2500, 'Alimentação': 1200, 'Transporte': 600, 'Lazer': 500 }));
+    const [customCategories, setCustomCategories] = useState(() => safeGet('fp_custom_categories', []));
+    const [accounts, setAccounts] = useState(() => safeGet('fp_accounts', defaultAccounts));
 
     const [formData, setFormData] = useState({
         type: 'saida',
@@ -550,16 +540,19 @@ export default function App() {
         return () => clearTimeout(timer);
     }, []);
 
-    // Categorias Combinadas
+    // Categorias Combinadas (Seguro contra qualquer formato de categoria)
     const allCategories = useMemo(() => {
         const combined = {
             entrada: [...baseCategories.entrada],
             saida: [...baseCategories.saida],
             investimento: [...baseCategories.investimento]
         };
-        customCategories.forEach(cat => {
-            if (combined[cat.type] && !combined[cat.type].includes(cat.name)) {
-                combined[cat.type].push(cat.name);
+        (customCategories || []).forEach(cat => {
+            if (!cat) return;
+            const catType = typeof cat === 'object' ? (cat.type || 'saida') : 'saida';
+            const catName = typeof cat === 'object' ? (cat.name || '') : String(cat);
+            if (catName && combined[catType] && !combined[catType].includes(catName)) {
+                combined[catType].push(catName);
             }
         });
         return combined;
@@ -567,8 +560,13 @@ export default function App() {
 
     const allCategoryColors = useMemo(() => {
         const combined = { ...baseCategoryColors };
-        customCategories.forEach(cat => {
-            combined[cat.name] = cat.color;
+        (customCategories || []).forEach(cat => {
+            if (!cat) return;
+            const catName = typeof cat === 'object' ? cat.name : String(cat);
+            const catColor = typeof cat === 'object' ? (cat.color || '#3b82f6') : '#3b82f6';
+            if (catName) {
+                combined[catName] = catColor;
+            }
         });
         return combined;
     }, [customCategories]);
@@ -1170,16 +1168,6 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
             setIsScanningReceipt(false);
         };
     };
-
-    if (isInitializing) {
-        return (
-            <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center text-blue-600 dark:text-blue-400">
-                <Loader2 className="animate-spin mb-4" size={48} />
-                <p className="font-black text-xl text-slate-800 dark:text-white">FinançasPro</p>
-                <p className="text-sm text-slate-400 mt-1">Carregando painel financeiro...</p>
-            </div>
-        );
-    }
 
     return (
         <div className={isDarkMode ? 'dark' : ''}>
