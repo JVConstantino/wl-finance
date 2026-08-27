@@ -8,8 +8,20 @@ import {
     CreditCard, BarChart3, Lightbulb, UploadCloud, FileText,
     CalendarDays, MessageSquare, Send, Users, Camera, Moon, Sun,
     Wifi, History, Sparkles, Activity, ArrowRightLeft, Key, Check, Info,
+<<<<<<< HEAD
     Download, ShieldCheck, Layers, ChevronDown
 } from 'lucide-react';
+=======
+    Download, ShieldCheck, Layers, ChevronDown, Database, LogIn, LogOut, RefreshCw
+} from 'lucide-react';
+import {
+    getSupabase, getSupabaseConfig, saveSupabaseConfig, clearSupabaseConfig,
+    authSignUp, authSignIn, authSignOut, authResetPassword,
+    fetchAllUserData, syncUpsertTransaction, syncDeleteTransaction,
+    syncUpsertAccount, syncDeleteAccount, syncUpsertRule, syncDeleteRule,
+    syncUpsertGoal, syncUpsertCategory, syncDeleteCategory, migrateAllLocalData
+} from './lib/supabase';
+>>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
 
 // Configurações Base
 const baseCategories = {
@@ -240,7 +252,199 @@ export default function App() {
         accountId: 'acc_main'
     });
 
+<<<<<<< HEAD
     // Salvar no LocalStorage automaticamente
+=======
+    // =========================================================================
+    // ESTADOS E SINCRONIZAÇÃO SUPABASE (NUVEM & AUTH)
+    // =========================================================================
+    const [supabaseUser, setSupabaseUser] = useState(null);
+    const [supabaseConfig, setSupabaseConfigState] = useState(() => getSupabaseConfig());
+    const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+    const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+    const [authMode, setAuthMode] = useState('login'); // 'login' | 'signup' | 'forgot'
+    const [authEmail, setAuthEmail] = useState('');
+    const [authPassword, setAuthPassword] = useState('');
+    const [authLoading, setAuthLoading] = useState(false);
+    const [authError, setAuthError] = useState('');
+    const [authSuccessMsg, setAuthSuccessMsg] = useState('');
+    const [isCloudConfigModalOpen, setIsCloudConfigModalOpen] = useState(false);
+    const [configUrlInput, setConfigUrlInput] = useState('');
+    const [configKeyInput, setConfigKeyInput] = useState('');
+    const [isMigrating, setIsMigrating] = useState(false);
+
+    // Carregar dados da nuvem quando usuário estiver autenticado
+    const loadCloudData = async (user) => {
+        if (!user) return;
+        try {
+            setIsCloudSyncing(true);
+            const cloudData = await fetchAllUserData();
+            if (cloudData) {
+                if (cloudData.transactions && cloudData.transactions.length > 0) {
+                    setTransactions(cloudData.transactions);
+                }
+                if (cloudData.accounts && cloudData.accounts.length > 0) {
+                    setAccounts(cloudData.accounts);
+                }
+                if (cloudData.repeatingRules && cloudData.repeatingRules.length > 0) {
+                    setRepeatingRules(cloudData.repeatingRules);
+                }
+                if (cloudData.monthlyGoals && Object.keys(cloudData.monthlyGoals).length > 0) {
+                    setMonthlyGoals(cloudData.monthlyGoals);
+                }
+                if (cloudData.customCategories && cloudData.customCategories.length > 0) {
+                    setCustomCategories(cloudData.customCategories);
+                }
+            }
+        } catch (err) {
+            console.error('Erro ao sincronizar com nuvem:', err);
+        } finally {
+            setIsCloudSyncing(false);
+        }
+    };
+
+    // Inicialização do Supabase & Monitoramento de Sessão
+    useEffect(() => {
+        const supabase = getSupabase();
+        if (!supabase) return;
+
+        // Obter sessão inicial
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session?.user) {
+                setSupabaseUser(session.user);
+                loadCloudData(session.user);
+            }
+        });
+
+        // Ouvir mudanças de autenticação
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+            if (session?.user) {
+                setSupabaseUser(session.user);
+                if (event === 'SIGNED_IN') {
+                    showToast(`Bem-vindo, ${session.user.email}!`);
+                    loadCloudData(session.user);
+                }
+            } else {
+                setSupabaseUser(null);
+            }
+        });
+
+        return () => {
+            subscription.unsubscribe();
+        };
+    }, [supabaseConfig.isConfigured]);
+
+    // Subscrição em Tempo Real (Realtime) para sincronizar múltiplos dispositivos
+    useEffect(() => {
+        const supabase = getSupabase();
+        if (!supabase || !supabaseUser) return;
+
+        const channel = supabase
+            .channel('db-changes')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => {
+                loadCloudData(supabaseUser);
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'monthly_goals' }, () => {
+                loadCloudData(supabaseUser);
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [supabaseUser]);
+
+    // Ações de Autenticação
+    const handleAuthSubmit = async (e) => {
+        e.preventDefault();
+        setAuthError('');
+        setAuthSuccessMsg('');
+
+        if (!authEmail.trim()) {
+            setAuthError('Informe seu e-mail.');
+            return;
+        }
+
+        setAuthLoading(true);
+        try {
+            if (authMode === 'login') {
+                if (!authPassword) throw new Error('Informe sua senha.');
+                await authSignIn(authEmail.trim(), authPassword);
+                setIsAuthModalOpen(false);
+                setAuthEmail('');
+                setAuthPassword('');
+                showToast('Login realizado com sucesso!');
+            } else if (authMode === 'signup') {
+                if (authPassword.length < 6) throw new Error('A senha deve ter no mínimo 6 caracteres.');
+                const res = await authSignUp(authEmail.trim(), authPassword);
+                if (res?.user && !res?.session) {
+                    setAuthSuccessMsg('Cadastro criado! Verifique a confirmação no seu e-mail.');
+                } else {
+                    setIsAuthModalOpen(false);
+                    setAuthEmail('');
+                    setAuthPassword('');
+                    showToast('Conta criada com sucesso!');
+                }
+            } else if (authMode === 'forgot') {
+                await authResetPassword(authEmail.trim());
+                setAuthSuccessMsg('Link de recuperação enviado para seu e-mail!');
+            }
+        } catch (err) {
+            setAuthError(err.message || 'Ocorreu um erro. Tente novamente.');
+        } finally {
+            setAuthLoading(false);
+        }
+    };
+
+    const handleSignOut = async () => {
+        try {
+            await authSignOut();
+            setSupabaseUser(null);
+            showToast('Você saiu da sua conta.');
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const handleSaveCloudConfig = (e) => {
+        e.preventDefault();
+        if (!configUrlInput.trim() || !configKeyInput.trim()) {
+            showToast('Preencha a URL e a Anon Key do Supabase.');
+            return;
+        }
+        saveSupabaseConfig(configUrlInput, configKeyInput);
+        setSupabaseConfigState(getSupabaseConfig());
+        setIsCloudConfigModalOpen(false);
+        showToast('Supabase configurado com sucesso!');
+    };
+
+    const handleMigrateToCloud = async () => {
+        if (!supabaseUser) {
+            showToast('Faça login primeiro para sincronizar.');
+            setIsAuthModalOpen(true);
+            return;
+        }
+        try {
+            setIsMigrating(true);
+            await migrateAllLocalData({
+                transactions,
+                accounts,
+                repeatingRules,
+                monthlyGoals,
+                customCategories
+            }, supabaseUser.id);
+            showToast('Todos os dados locais foram salvos na nuvem!');
+            loadCloudData(supabaseUser);
+        } catch (err) {
+            console.error('Erro na migração:', err);
+            showToast('Erro ao migrar dados: ' + (err.message || 'verifique as tabelas'));
+        } finally {
+            setIsMigrating(false);
+        }
+    };
+
+    // Salvar no LocalStorage automaticamente (backup offline)
+>>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
     useEffect(() => {
         localStorage.setItem('fp_transactions', JSON.stringify(transactions));
     }, [transactions]);
@@ -495,10 +699,22 @@ export default function App() {
             }
             return [tData, ...prev];
         });
+<<<<<<< HEAD
+=======
+        if (supabaseUser) {
+            syncUpsertTransaction(tData, supabaseUser.id);
+        }
+>>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
     };
 
     const deleteTransaction = (id) => {
         setTransactions(prev => prev.filter(t => t.id !== id));
+<<<<<<< HEAD
+=======
+        if (supabaseUser) {
+            syncDeleteTransaction(id, supabaseUser.id);
+        }
+>>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
     };
 
     const saveRule = (rData) => {
@@ -511,10 +727,22 @@ export default function App() {
             }
             return [...prev, rData];
         });
+<<<<<<< HEAD
+=======
+        if (supabaseUser) {
+            syncUpsertRule(rData, supabaseUser.id);
+        }
+>>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
     };
 
     const deleteRule = (ruleId) => {
         setRepeatingRules(prev => prev.filter(r => r.id !== ruleId));
+<<<<<<< HEAD
+=======
+        if (supabaseUser) {
+            syncDeleteRule(ruleId, supabaseUser.id);
+        }
+>>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
     };
 
     const handleSubmit = (e) => {
@@ -1002,8 +1230,85 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                         </div>
                     </div>
 
+<<<<<<< HEAD
                     {/* Rodapé da Sidebar: Dark Mode & Perfil */}
                     <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
+=======
+                    {/* Rodapé da Sidebar: Dark Mode & Perfil / Supabase */}
+                    <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                        {/* Status da Nuvem Supabase */}
+                        <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-2">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <span className={`w-2.5 h-2.5 rounded-full ${supabaseUser ? 'bg-emerald-500 animate-pulse' : supabaseConfig.isConfigured ? 'bg-amber-500' : 'bg-slate-400'}`}></span>
+                                    <span className="text-[11px] font-black uppercase text-slate-700 dark:text-slate-200">
+                                        {supabaseUser ? 'Nuvem Conectada' : supabaseConfig.isConfigured ? 'Nuvem Desconectada' : 'Modo Offline'}
+                                    </span>
+                                </div>
+                                {isCloudSyncing && <RefreshCw size={12} className="animate-spin text-blue-500" />}
+                            </div>
+
+                            {supabaseUser ? (
+                                <div className="space-y-1.5 pt-1">
+                                    <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate">{supabaseUser.email}</p>
+                                    <div className="flex items-center gap-1.5 pt-1">
+                                        <button
+                                            onClick={() => loadCloudData(supabaseUser)}
+                                            className="flex-1 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 py-1.5 px-2 rounded-xl text-[10px] font-extrabold flex items-center justify-center gap-1 transition"
+                                            title="Sincronizar dados agora"
+                                        >
+                                            <RefreshCw size={11} /> Sync
+                                        </button>
+                                        <button
+                                            onClick={handleMigrateToCloud}
+                                            disabled={isMigrating}
+                                            className="bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 py-1.5 px-2 rounded-xl text-[10px] font-extrabold flex items-center justify-center gap-1 transition"
+                                            title="Subir dados locais para a nuvem"
+                                        >
+                                            <UploadCloud size={11} /> {isMigrating ? '...' : 'Subir'}
+                                        </button>
+                                        <button
+                                            onClick={handleSignOut}
+                                            className="bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 p-1.5 rounded-xl transition"
+                                            title="Sair da conta"
+                                        >
+                                            <LogOut size={12} />
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="space-y-1.5 pt-1">
+                                    <button
+                                        onClick={() => {
+                                            if (!supabaseConfig.isConfigured) {
+                                                setConfigUrlInput(supabaseConfig.url || '');
+                                                setConfigKeyInput(supabaseConfig.key || '');
+                                                setIsCloudConfigModalOpen(true);
+                                            } else {
+                                                setAuthMode('login');
+                                                setIsAuthModalOpen(true);
+                                            }
+                                        }}
+                                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-2 px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-sm transition"
+                                    >
+                                        <LogIn size={14} /> Entrar na Nuvem
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setConfigUrlInput(supabaseConfig.url || '');
+                                            setConfigKeyInput(supabaseConfig.key || '');
+                                            setIsCloudConfigModalOpen(true);
+                                        }}
+                                        className="w-full text-center text-[10px] font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 py-1"
+                                    >
+                                        ⚙️ Configurar Supabase
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Modo Escuro */}
+>>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
                         <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-2xl border border-slate-100 dark:border-slate-800">
                             <span className="text-xs font-bold text-slate-600 dark:text-slate-300 ml-2">Tema {isDarkMode ? 'Escuro' : 'Claro'}</span>
                             <button
@@ -1014,6 +1319,7 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                 {isDarkMode ? <Sun size={16} className="text-amber-500" /> : <Moon size={16} className="text-indigo-500" />}
                             </button>
                         </div>
+<<<<<<< HEAD
 
                         <div className="flex items-center gap-3 px-2">
                             <div className="w-10 h-10 rounded-2xl bg-blue-600/10 dark:bg-blue-400/10 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black text-sm">
@@ -1024,6 +1330,8 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                 <p className="text-[10px] font-bold text-slate-400 truncate">Sessão Local Segura</p>
                             </div>
                         </div>
+=======
+>>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
                     </div>
                 </aside>
 
@@ -1130,6 +1438,7 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                             <div className="relative bg-white dark:bg-slate-900 w-72 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 p-4 space-y-2 z-50 animate-in fade-in zoom-in-95">
                                 <div className="px-2 py-2 border-b border-slate-100 dark:border-slate-800">
                                     <p className="text-xs font-black text-slate-800 dark:text-white">Minha Conta</p>
+<<<<<<< HEAD
                                     <p className="text-[10px] text-slate-400">Armazenamento Local Ativo</p>
                                 </div>
                                 <button
@@ -1157,6 +1466,93 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                 >
                                     <Key size={16} className="text-indigo-500" /> Chave Gemini IA
                                 </button>
+=======
+                                    <p className="text-[10px] text-slate-400">
+                                        {supabaseUser ? `Conectado: ${supabaseUser.email}` : 'Armazenamento Local'}
+                                    </p>
+                                </div>
+
+                                {supabaseUser ? (
+                                    <div className="space-y-1 py-1">
+                                        <button
+                                            onClick={() => { setShowProfileMenu(false); loadCloudData(supabaseUser); }}
+                                            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-blue-600 dark:text-blue-400 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-950/40"
+                                        >
+                                            <RefreshCw size={16} /> Sincronizar Nuvem
+                                        </button>
+                                        <button
+                                            onClick={() => { setShowProfileMenu(false); handleMigrateToCloud(); }}
+                                            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-emerald-600 dark:text-emerald-400 rounded-xl hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                                        >
+                                            <UploadCloud size={16} /> Subir Dados Locais
+                                        </button>
+                                        <button
+                                            onClick={() => { setShowProfileMenu(false); handleSignOut(); }}
+                                            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-rose-600 dark:text-rose-400 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                                        >
+                                            <LogOut size={16} /> Sair da Conta
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-1 py-1">
+                                        <button
+                                            onClick={() => {
+                                                setShowProfileMenu(false);
+                                                if (!supabaseConfig.isConfigured) {
+                                                    setConfigUrlInput(supabaseConfig.url || '');
+                                                    setConfigKeyInput(supabaseConfig.key || '');
+                                                    setIsCloudConfigModalOpen(true);
+                                                } else {
+                                                    setAuthMode('login');
+                                                    setIsAuthModalOpen(true);
+                                                }
+                                            }}
+                                            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-blue-600 dark:text-blue-400 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-950/40"
+                                        >
+                                            <LogIn size={16} /> Entrar / Criar Conta
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setShowProfileMenu(false);
+                                                setConfigUrlInput(supabaseConfig.url || '');
+                                                setConfigKeyInput(supabaseConfig.key || '');
+                                                setIsCloudConfigModalOpen(true);
+                                            }}
+                                            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                                        >
+                                            <Database size={16} /> Configurar Supabase
+                                        </button>
+                                    </div>
+                                )}
+
+                                <div className="border-t border-slate-100 dark:border-slate-800 pt-1">
+                                    <button
+                                        onClick={() => { setIsDarkMode(!isDarkMode); setShowProfileMenu(false); }}
+                                        className="w-full flex items-center justify-between px-3 py-2 text-xs font-bold rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                                    >
+                                        <span>Modo {isDarkMode ? 'Claro' : 'Escuro'}</span>
+                                        {isDarkMode ? <Sun size={16} className="text-amber-500" /> : <Moon size={16} className="text-indigo-500" />}
+                                    </button>
+                                    <button
+                                        onClick={() => { setShowProfileMenu(false); setIsCategoryManagerOpen(true); }}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                                    >
+                                        <Tag size={16} className="text-blue-500" /> Categorias
+                                    </button>
+                                    <button
+                                        onClick={() => { setShowProfileMenu(false); setIsFamilyModalOpen(true); }}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                                    >
+                                        <Users size={16} className="text-emerald-500" /> Modo Família
+                                    </button>
+                                    <button
+                                        onClick={() => { setShowProfileMenu(false); setApiKeyInput(geminiApiKey); setIsApiKeyModalOpen(true); }}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                                    >
+                                        <Key size={16} className="text-indigo-500" /> Chave Gemini IA
+                                    </button>
+                                </div>
+>>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
                             </div>
                         </div>
                     )}
@@ -2212,6 +2608,12 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                 e.preventDefault();
                                 const val = parseFloat(goalAmountInput) || 0;
                                 setMonthlyGoals(prev => ({ ...prev, [editingCategoryGoal]: val }));
+<<<<<<< HEAD
+=======
+                                if (supabaseUser) {
+                                    syncUpsertGoal(editingCategoryGoal, val, supabaseUser.id);
+                                }
+>>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
                                 setIsGoalModalOpen(false);
                                 showToast(`Meta de ${editingCategoryGoal} atualizada!`);
                             }}>
@@ -2234,6 +2636,12 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                                 delete updated[editingCategoryGoal];
                                                 return updated;
                                             });
+<<<<<<< HEAD
+=======
+                                            if (supabaseUser) {
+                                                syncUpsertGoal(editingCategoryGoal, 0, supabaseUser.id);
+                                            }
+>>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
                                             setIsGoalModalOpen(false);
                                             showToast("Meta removida!");
                                         }}
@@ -2275,7 +2683,15 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                     showToast("Categoria já existe.");
                                     return;
                                 }
+<<<<<<< HEAD
                                 setCustomCategories(prev => [...prev, { name: trimmed, type: newCatData.type, color: newCatData.color }]);
+=======
+                                const newCat = { id: 'cat_' + Date.now(), name: trimmed, type: newCatData.type, color: newCatData.color };
+                                setCustomCategories(prev => [...prev, newCat]);
+                                if (supabaseUser) {
+                                    syncUpsertCategory(newCat, supabaseUser.id);
+                                }
+>>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
                                 setNewCatData({ name: '', type: 'saida', color: '#3b82f6' });
                                 showToast("Categoria adicionada!");
                             }} className="space-y-3 mb-6 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-3xl border border-slate-100 dark:border-slate-800">
@@ -2325,6 +2741,12 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                                 <button
                                                     onClick={() => {
                                                         setCustomCategories(prev => prev.filter(c => c.name !== cat.name));
+<<<<<<< HEAD
+=======
+                                                        if (supabaseUser) {
+                                                            syncDeleteCategory(cat.id || cat.name, supabaseUser.id);
+                                                        }
+>>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
                                                         showToast("Categoria removida.");
                                                     }}
                                                     className="text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 p-1.5 rounded-lg"
@@ -2468,6 +2890,7 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                     </div>
                 )}
 
+<<<<<<< HEAD
                 {/* Modal Confirmação de Exclusão */}
                 {transactionToDelete && (
                     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -2516,6 +2939,209 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                     Sim, Excluir
                                 </button>
                             </div>
+=======
+                {/* Modal de Autenticação Supabase (Login / Cadastro / Esqueci a Senha) */}
+                {isAuthModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+                        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsAuthModalOpen(false)}></div>
+                        <div className="relative bg-white dark:bg-slate-900 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-full duration-300">
+                            <div className="flex justify-between items-center mb-6">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-2xl bg-blue-600/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                                        <Database size={22} />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-black text-slate-800 dark:text-white">
+                                            {authMode === 'login' && 'Entrar na Nuvem'}
+                                            {authMode === 'signup' && 'Criar Conta Nuvem'}
+                                            {authMode === 'forgot' && 'Recuperar Senha'}
+                                        </h2>
+                                        <p className="text-xs text-slate-400">Acesse suas finanças de qualquer lugar</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setIsAuthModalOpen(false)} className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 rounded-2xl">
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            {/* Tabs de Seleção de Modo */}
+                            {authMode !== 'forgot' && (
+                                <div className="grid grid-cols-2 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-2xl mb-6">
+                                    <button
+                                        type="button"
+                                        onClick={() => { setAuthMode('login'); setAuthError(''); setAuthSuccessMsg(''); }}
+                                        className={`py-2.5 text-xs font-black rounded-xl transition ${authMode === 'login' ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500'}`}
+                                    >
+                                        Já tenho conta
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => { setAuthMode('signup'); setAuthError(''); setAuthSuccessMsg(''); }}
+                                        className={`py-2.5 text-xs font-black rounded-xl transition ${authMode === 'signup' ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500'}`}
+                                    >
+                                        Criar nova conta
+                                    </button>
+                                </div>
+                            )}
+
+                            {authError && (
+                                <div className="p-3.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 rounded-2xl text-rose-600 dark:text-rose-400 text-xs font-bold mb-4 flex items-center gap-2">
+                                    <AlertTriangle size={16} className="shrink-0" />
+                                    <span>{authError}</span>
+                                </div>
+                            )}
+
+                            {authSuccessMsg && (
+                                <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-2xl text-emerald-600 dark:text-emerald-400 text-xs font-bold mb-4 flex items-center gap-2">
+                                    <CheckCircle2 size={16} className="shrink-0" />
+                                    <span>{authSuccessMsg}</span>
+                                </div>
+                            )}
+
+                            <form onSubmit={handleAuthSubmit} className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Seu E-mail</label>
+                                    <input
+                                        type="email"
+                                        required
+                                        value={authEmail}
+                                        onChange={(e) => setAuthEmail(e.target.value)}
+                                        placeholder="exemplo@email.com"
+                                        className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                </div>
+
+                                {authMode !== 'forgot' && (
+                                    <div>
+                                        <div className="flex justify-between items-center mb-1.5">
+                                            <label className="block text-xs font-bold text-slate-400 uppercase">Sua Senha</label>
+                                            {authMode === 'login' && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setAuthMode('forgot'); setAuthError(''); setAuthSuccessMsg(''); }}
+                                                    className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline"
+                                                >
+                                                    Esqueceu?
+                                                </button>
+                                            )}
+                                        </div>
+                                        <input
+                                            type="password"
+                                            required
+                                            value={authPassword}
+                                            onChange={(e) => setAuthPassword(e.target.value)}
+                                            placeholder="••••••••"
+                                            className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+                                )}
+
+                                <button
+                                    type="submit"
+                                    disabled={authLoading}
+                                    className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black py-4 rounded-2xl text-sm shadow-lg shadow-blue-600/25 flex items-center justify-center gap-2 transition disabled:opacity-50 mt-2"
+                                >
+                                    {authLoading ? <Loader2 size={18} className="animate-spin" /> : null}
+                                    {authMode === 'login' && 'Entrar e Sincronizar'}
+                                    {authMode === 'signup' && 'Cadastrar Gratuitamente'}
+                                    {authMode === 'forgot' && 'Enviar E-mail de Recuperação'}
+                                </button>
+
+                                {authMode === 'forgot' && (
+                                    <button
+                                        type="button"
+                                        onClick={() => { setAuthMode('login'); setAuthError(''); setAuthSuccessMsg(''); }}
+                                        className="w-full text-center text-xs font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white py-2"
+                                    >
+                                        ← Voltar para o Login
+                                    </button>
+                                )}
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* Modal de Configuração do Supabase (Credenciais) */}
+                {isCloudConfigModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+                        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsCloudConfigModalOpen(false)}></div>
+                        <div className="relative bg-white dark:bg-slate-900 w-full max-w-lg rounded-t-3xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-full duration-300 max-h-[90vh] overflow-y-auto">
+                            <div className="flex justify-between items-center mb-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-2xl bg-emerald-600/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                                        <Database size={22} />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-black text-slate-800 dark:text-white">Conectar Supabase</h2>
+                                        <p className="text-xs text-slate-400">Banco de Dados PostgreSQL na Nuvem</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setIsCloudConfigModalOpen(false)} className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 rounded-2xl">
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            <div className="bg-blue-50 dark:bg-blue-950/40 p-4 rounded-2xl border border-blue-100 dark:border-blue-900/50 mb-6 text-xs space-y-2 text-slate-600 dark:text-slate-300 leading-relaxed">
+                                <p className="font-bold text-blue-700 dark:text-blue-300">Como conectar seu projeto:</p>
+                                <ol className="list-decimal list-inside space-y-1">
+                                    <li>Crie um projeto gratuito em <strong>supabase.com</strong>.</li>
+                                    <li>No painel do Supabase, vá em <strong>SQL Editor</strong> e execute o script <code>supabase/schema.sql</code>.</li>
+                                    <li>Vá em <strong>Project Settings → API</strong> e copie a <strong>URL</strong> e a <strong>Anon Key</strong>.</li>
+                                </ol>
+                            </div>
+
+                            <form onSubmit={handleSaveCloudConfig} className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Project URL</label>
+                                    <input
+                                        type="url"
+                                        required
+                                        value={configUrlInput}
+                                        onChange={(e) => setConfigUrlInput(e.target.value)}
+                                        placeholder="https://xyzcompany.supabase.co"
+                                        className="w-full text-xs font-mono text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Anon Public Key</label>
+                                    <textarea
+                                        rows={3}
+                                        required
+                                        value={configKeyInput}
+                                        onChange={(e) => setConfigKeyInput(e.target.value)}
+                                        placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                                        className="w-full text-xs font-mono text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                </div>
+
+                                <div className="pt-2 space-y-2">
+                                    <button
+                                        type="submit"
+                                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3.5 rounded-2xl text-sm shadow-md transition"
+                                    >
+                                        Salvar e Conectar
+                                    </button>
+
+                                    {supabaseConfig.isConfigured && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                clearSupabaseConfig();
+                                                setSupabaseConfigState(getSupabaseConfig());
+                                                setConfigUrlInput('');
+                                                setConfigKeyInput('');
+                                                setIsCloudConfigModalOpen(false);
+                                                showToast("Configuração do Supabase removida.");
+                                            }}
+                                            className="w-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-rose-500 font-bold py-2.5 rounded-2xl text-xs transition"
+                                        >
+                                            Desconectar Supabase
+                                        </button>
+                                    )}
+                                </div>
+                            </form>
+>>>>>>> 4d20c5a (feat: integracao com supabase, auth, realtime sync e schema sql)
                         </div>
                     </div>
                 )}
