@@ -150,6 +150,88 @@ export const getSession = async () => {
 };
 
 // ==============================================================================
+// FAMÍLIA & CASAL (COMPARTILHAMENTO DE CONTA MULTI-DISPOSITIVO)
+// ==============================================================================
+
+export const fetchUserFamily = async (userId) => {
+    const supabase = getSupabase();
+    if (!supabase || !userId) return null;
+    try {
+        const { data, error } = await supabase
+            .from('family_members')
+            .select('family_id, user_email, role, family_groups(name, created_by)')
+            .eq('user_id', userId)
+            .maybeSingle();
+
+        if (error) return null;
+        if (!data) return null;
+
+        // Buscar membros do grupo
+        const { data: allMembers } = await supabase
+            .from('family_members')
+            .select('user_email, role, created_at')
+            .eq('family_id', data.family_id);
+
+        return {
+            familyId: data.family_id,
+            familyName: data.family_groups?.name || 'Família',
+            role: data.role,
+            members: allMembers || []
+        };
+    } catch (err) {
+        console.warn('Erro ao buscar família:', err);
+        return null;
+    }
+};
+
+export const joinOrCreateFamily = async (familyCode, familyName, user) => {
+    const supabase = getSupabase();
+    if (!supabase || !user) throw new Error('Supabase ou usuário não disponível');
+    const code = familyCode.trim().toUpperCase();
+
+    // 1. Verificar se o grupo familiar já existe ou criar
+    const { data: existingGroup } = await supabase
+        .from('family_groups')
+        .select('*')
+        .eq('id', code)
+        .maybeSingle();
+
+    if (!existingGroup) {
+        const { error: errCreate } = await supabase
+            .from('family_groups')
+            .insert({
+                id: code,
+                name: familyName || `Família ${code}`,
+                created_by: user.id
+            });
+        if (errCreate) console.warn('Aviso ao criar grupo:', errCreate);
+    }
+
+    // 2. Inserir ou atualizar o membro
+    const { error: errMember } = await supabase
+        .from('family_members')
+        .upsert({
+            family_id: code,
+            user_id: user.id,
+            user_email: user.email,
+            role: existingGroup ? 'member' : 'owner'
+        }, { onConflict: 'family_id, user_id' });
+
+    if (errMember) throw errMember;
+    return { familyId: code, familyName: existingGroup?.name || familyName || `Família ${code}` };
+};
+
+export const leaveFamily = async (familyCode, userId) => {
+    const supabase = getSupabase();
+    if (!supabase || !userId) return;
+    await supabase
+        .from('family_members')
+        .delete()
+        .eq('family_id', familyCode)
+        .eq('user_id', userId);
+};
+
+// ==============================================================================
 // DATA SYNC & CLOUD OPERATIONS
 // ==============================================================================
 
@@ -187,7 +269,10 @@ export const fetchAllUserData = async () => {
         description: t.description || '',
         status: t.status || 'pago',
         accountId: t.account_id || 'acc_main',
-        isFromRepeatRule: t.is_from_repeat_rule || undefined
+        isFromRepeatRule: t.is_from_repeat_rule || undefined,
+        paidBy: t.paid_by || 'conjunto',
+        createdByEmail: t.created_by_email || undefined,
+        familyId: t.family_id || undefined
     }));
 
     const formattedAccounts = (accs || []).map(a => ({
@@ -228,13 +313,16 @@ export const fetchAllUserData = async () => {
     };
 };
 
-export const syncUpsertTransaction = async (tx, userId) => {
+export const syncUpsertTransaction = async (tx, userId, familyId, userEmail) => {
     const supabase = getSupabase();
     if (!supabase || !userId) return;
 
     const payload = {
         id: tx.id,
         user_id: userId,
+        family_id: familyId || null,
+        paid_by: tx.paidBy || 'conjunto',
+        created_by_email: userEmail || null,
         type: tx.type,
         amount: Number(tx.amount),
         category: tx.category,
@@ -256,13 +344,14 @@ export const syncDeleteTransaction = async (id, userId) => {
     if (error) console.error('Erro ao excluir transação da nuvem:', error);
 };
 
-export const syncUpsertAccount = async (account, userId) => {
+export const syncUpsertAccount = async (account, userId, familyId) => {
     const supabase = getSupabase();
     if (!supabase || !userId) return;
 
     const payload = {
         id: account.id,
         user_id: userId,
+        family_id: familyId || null,
         name: account.name,
         type: account.type,
         color: account.color || 'from-blue-600 to-indigo-800'
@@ -279,13 +368,14 @@ export const syncDeleteAccount = async (id, userId) => {
     if (error) console.error('Erro ao excluir conta da nuvem:', error);
 };
 
-export const syncUpsertRule = async (rule, userId) => {
+export const syncUpsertRule = async (rule, userId, familyId) => {
     const supabase = getSupabase();
     if (!supabase || !userId) return;
 
     const payload = {
         id: rule.id,
         user_id: userId,
+        family_id: familyId || null,
         type: rule.type,
         amount: Number(rule.amount),
         category: rule.category,
@@ -305,12 +395,13 @@ export const syncDeleteRule = async (id, userId) => {
     if (error) console.error('Erro ao excluir regra da nuvem:', error);
 };
 
-export const syncUpsertGoal = async (category, amount, userId) => {
+export const syncUpsertGoal = async (category, amount, userId, familyId) => {
     const supabase = getSupabase();
     if (!supabase || !userId) return;
 
     const payload = {
         user_id: userId,
+        family_id: familyId || null,
         category,
         amount: Number(amount),
         updated_at: new Date().toISOString()
@@ -320,13 +411,14 @@ export const syncUpsertGoal = async (category, amount, userId) => {
     if (error) console.error('Erro ao salvar meta na nuvem:', error);
 };
 
-export const syncUpsertCategory = async (cat, userId) => {
+export const syncUpsertCategory = async (cat, userId, familyId) => {
     const supabase = getSupabase();
     if (!supabase || !userId) return;
 
     const payload = {
         id: cat.id || `cat_${Date.now()}`,
         user_id: userId,
+        family_id: familyId || null,
         name: cat.name,
         type: cat.type,
         color: cat.color || '#3b82f6'
@@ -347,7 +439,7 @@ export const syncDeleteCategory = async (id, userId) => {
 // MIGRAÇÃO LOCALSTORAGE -> NUVEM SUPABASE
 // ==============================================================================
 
-export const migrateAllLocalData = async (data, userId) => {
+export const migrateAllLocalData = async (data, userId, familyId, userEmail) => {
     const supabase = getSupabase();
     if (!supabase || !userId) throw new Error('Supabase ou usuário não disponível');
 
@@ -358,6 +450,7 @@ export const migrateAllLocalData = async (data, userId) => {
         const accPayloads = accounts.map(a => ({
             id: a.id,
             user_id: userId,
+            family_id: familyId || null,
             name: a.name,
             type: a.type,
             color: a.color || ''
@@ -370,6 +463,7 @@ export const migrateAllLocalData = async (data, userId) => {
         const catPayloads = customCategories.map(c => ({
             id: c.id,
             user_id: userId,
+            family_id: familyId || null,
             name: c.name,
             type: c.type,
             color: c.color || '#3b82f6'
@@ -382,6 +476,7 @@ export const migrateAllLocalData = async (data, userId) => {
         const rulePayloads = repeatingRules.map(r => ({
             id: r.id,
             user_id: userId,
+            family_id: familyId || null,
             type: r.type,
             amount: Number(r.amount),
             category: r.category,
@@ -397,6 +492,7 @@ export const migrateAllLocalData = async (data, userId) => {
     if (goalEntries.length > 0) {
         const goalPayloads = goalEntries.map(([category, amount]) => ({
             user_id: userId,
+            family_id: familyId || null,
             category,
             amount: Number(amount),
             updated_at: new Date().toISOString()
@@ -409,6 +505,9 @@ export const migrateAllLocalData = async (data, userId) => {
         const txPayloads = transactions.map(t => ({
             id: t.id,
             user_id: userId,
+            family_id: familyId || null,
+            paid_by: t.paidBy || 'conjunto',
+            created_by_email: userEmail || null,
             type: t.type,
             amount: Number(t.amount),
             category: t.category,

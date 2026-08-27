@@ -8,15 +8,16 @@ import {
     CreditCard, BarChart3, Lightbulb, UploadCloud, FileText,
     CalendarDays, MessageSquare, Send, Users, Camera, Moon, Sun,
     Wifi, History, Sparkles, Activity, ArrowRightLeft, Key, Check, Info,
-
-    Download, ShieldCheck, Layers, ChevronDown, Database, LogIn, LogOut, RefreshCw
+    Download, ShieldCheck, Layers, ChevronDown, Database, LogIn, LogOut, RefreshCw,
+    Lock, Unlock, Shield, Heart, Copy
 } from 'lucide-react';
 import {
     getSupabase, getSupabaseConfig, saveSupabaseConfig, clearSupabaseConfig,
     authSignUp, authSignIn, authSignOut, authResetPassword,
     fetchAllUserData, syncUpsertTransaction, syncDeleteTransaction,
     syncUpsertAccount, syncDeleteAccount, syncUpsertRule, syncDeleteRule,
-    syncUpsertGoal, syncUpsertCategory, syncDeleteCategory, migrateAllLocalData
+    syncUpsertGoal, syncUpsertCategory, syncDeleteCategory, migrateAllLocalData,
+    fetchUserFamily, joinOrCreateFamily, leaveFamily
 } from './lib/supabase';
 
 
@@ -158,9 +159,11 @@ export default function App() {
     const [newCatData, setNewCatData] = useState({ name: '', type: 'saida', color: '#3b82f6' });
     const [isFamilyModalOpen, setIsFamilyModalOpen] = useState(false);
     const [familyCodeInput, setFamilyCodeInput] = useState('');
+    const [familyNameInput, setFamilyNameInput] = useState('');
     const [activeFamilyCode, setActiveFamilyCode] = useState(() => {
         try { return localStorage.getItem('fp_family_code') || null; } catch(e) { return null; }
     });
+    const [familyData, setFamilyData] = useState(null);
     const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
     const [geminiApiKey, setGeminiApiKey] = useState(() => {
         try { return localStorage.getItem('fp_gemini_key') || ''; } catch(e) { return ''; }
@@ -198,7 +201,8 @@ export default function App() {
         description: '',
         status: 'pago',
         isRepeating: false,
-        accountId: 'acc_main'
+        accountId: 'acc_main',
+        paidBy: 'conjunto' // 'marido' | 'esposa' | 'conjunto'
     });
 
     // 6. Estados do Supabase (Nuvem & Auth)
@@ -217,7 +221,16 @@ export default function App() {
     const [configKeyInput, setConfigKeyInput] = useState('');
     const [isMigrating, setIsMigrating] = useState(false);
 
-    // 7. Estados Pull-to-Refresh
+    // 7. Segurança e Bloqueio por PIN (App Lock)
+    const [appPin, setAppPin] = useState(() => safeGet('fp_app_pin', ''));
+    const [isAppLocked, setIsAppLocked] = useState(() => Boolean(safeGet('fp_app_pin', '')));
+    const [enteredPin, setEnteredPin] = useState('');
+    const [pinError, setPinError] = useState(false);
+    const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+    const [newPinInput, setNewPinInput] = useState('');
+    const [confirmPinInput, setConfirmPinInput] = useState('');
+
+    // 8. Estados Pull-to-Refresh
     const [pullY, setPullY] = useState(0);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const touchStartRef = useRef(0);
@@ -252,6 +265,17 @@ export default function App() {
                 if (cloudData.customCategories && cloudData.customCategories.length > 0) {
                     setCustomCategories(cloudData.customCategories);
                 }
+            }
+            // Buscar dados da família / casal
+            try {
+                const fam = await fetchUserFamily(user.id);
+                if (fam) {
+                    setFamilyData(fam);
+                    setActiveFamilyCode(fam.familyId);
+                    localStorage.setItem('fp_family_code', fam.familyId);
+                }
+            } catch (errFam) {
+                console.warn('Grupo familiar não encontrado:', errFam);
             }
         } catch (err) {
             console.error('Erro ao sincronizar com nuvem:', err);
@@ -356,6 +380,127 @@ export default function App() {
             window.removeEventListener('touchend', handleTouchEnd);
         };
     }, [isRefreshing, supabaseUser, pullY]);
+
+    // App Lock Visibility Listener (Bloqueia ao alternar de aplicativo se o PIN estiver ativo)
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                const currentPin = safeGet('fp_app_pin', '');
+                if (currentPin) {
+                    setIsAppLocked(true);
+                    setEnteredPin('');
+                }
+            }
+        };
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    }, []);
+
+    const handlePinKeyPress = (digit) => {
+        if (enteredPin.length >= 4) return;
+        const newPin = enteredPin + digit;
+        setEnteredPin(newPin);
+        if (navigator.vibrate) {
+            try { navigator.vibrate(15); } catch(e) {}
+        }
+        if (newPin.length === 4) {
+            if (newPin === appPin) {
+                if (navigator.vibrate) {
+                    try { navigator.vibrate([25, 40, 25]); } catch(e) {}
+                }
+                setTimeout(() => {
+                    setIsAppLocked(false);
+                    setEnteredPin('');
+                    setPinError(false);
+                }, 150);
+            } else {
+                setPinError(true);
+                if (navigator.vibrate) {
+                    try { navigator.vibrate([80, 40, 80]); } catch(e) {}
+                }
+                setTimeout(() => {
+                    setEnteredPin('');
+                    setPinError(false);
+                }, 700);
+            }
+        }
+    };
+
+    const handlePinDelete = () => {
+        setEnteredPin(prev => prev.slice(0, -1));
+        if (navigator.vibrate) {
+            try { navigator.vibrate(10); } catch(e) {}
+        }
+    };
+
+    const handleSetNewPin = (e) => {
+        e.preventDefault();
+        if (newPinInput.length !== 4 || !/^\d{4}$/.test(newPinInput)) {
+            showToast("O PIN deve conter exatamente 4 dígitos numéricos.");
+            return;
+        }
+        if (newPinInput !== confirmPinInput) {
+            showToast("Os PINs digitados não conferem.");
+            return;
+        }
+        setAppPin(newPinInput);
+        localStorage.setItem('fp_app_pin', newPinInput);
+        setNewPinInput('');
+        setConfirmPinInput('');
+        setIsPinModalOpen(false);
+        showToast("🔒 PIN de segurança ativado com sucesso!");
+    };
+
+    const handleRemoveAppPin = () => {
+        setAppPin('');
+        localStorage.removeItem('fp_app_pin');
+        setIsAppLocked(false);
+        setIsPinModalOpen(false);
+        showToast("Bloqueio por PIN desativado.");
+    };
+
+    const handleJoinOrCreateFamily = async (e) => {
+        e.preventDefault();
+        if (!familyCodeInput.trim()) return;
+        const code = familyCodeInput.trim().toUpperCase();
+        try {
+            if (supabaseUser) {
+                const res = await joinOrCreateFamily(code, familyNameInput || `Casal ${code}`, supabaseUser);
+                setActiveFamilyCode(res.familyId);
+                localStorage.setItem('fp_family_code', res.familyId);
+                const fam = await fetchUserFamily(supabaseUser.id);
+                if (fam) setFamilyData(fam);
+                await loadCloudData(supabaseUser);
+                showToast(`Conectado ao grupo familiar: ${code}!`);
+            } else {
+                setActiveFamilyCode(code);
+                localStorage.setItem('fp_family_code', code);
+                showToast(`Código ${code} salvo localmente!`);
+            }
+            setIsFamilyModalOpen(false);
+        } catch (err) {
+            console.error(err);
+            showToast("Erro ao conectar ao grupo: " + (err.message || 'verifique a conexão.'));
+        }
+    };
+
+    const handleLeaveFamilyGroup = async () => {
+        if (!activeFamilyCode) return;
+        try {
+            if (supabaseUser) {
+                await leaveFamily(activeFamilyCode, supabaseUser.id);
+            }
+            setActiveFamilyCode(null);
+            setFamilyData(null);
+            localStorage.removeItem('fp_family_code');
+            setIsFamilyModalOpen(false);
+            if (supabaseUser) await loadCloudData(supabaseUser);
+            showToast("Você desconectou do modo casal/família.");
+        } catch (err) {
+            console.error(err);
+            showToast("Erro ao sair do grupo.");
+        }
+    };
 
     // Inicialização do Supabase & Monitoramento de Sessão
     useEffect(() => {
@@ -761,9 +906,8 @@ export default function App() {
         });
 
         if (supabaseUser) {
-            syncUpsertTransaction(tData, supabaseUser.id);
+            syncUpsertTransaction(tData, supabaseUser.id, activeFamilyCode, supabaseUser.email);
         }
-
     };
 
     const deleteTransaction = (id) => {
@@ -772,7 +916,6 @@ export default function App() {
         if (supabaseUser) {
             syncDeleteTransaction(id, supabaseUser.id);
         }
-
     };
 
     const saveRule = (rData) => {
@@ -787,9 +930,8 @@ export default function App() {
         });
 
         if (supabaseUser) {
-            syncUpsertRule(rData, supabaseUser.id);
+            syncUpsertRule(rData, supabaseUser.id, activeFamilyCode);
         }
-
     };
 
     const deleteRule = (ruleId) => {
@@ -798,7 +940,6 @@ export default function App() {
         if (supabaseUser) {
             syncDeleteRule(ruleId, supabaseUser.id);
         }
-
     };
 
     const handleSubmit = (e) => {
@@ -819,7 +960,8 @@ export default function App() {
                 date: formData.date,
                 description: formData.description.trim(),
                 status: formData.status,
-                accountId: formData.accountId
+                accountId: formData.accountId,
+                paidBy: formData.paidBy || existing?.paidBy || 'conjunto'
             };
             saveTransaction(updated);
             showToast('Registro editado com sucesso!');
@@ -833,7 +975,8 @@ export default function App() {
                 date: formData.date,
                 description: formData.description.trim(),
                 status: formData.status,
-                accountId: formData.accountId
+                accountId: formData.accountId,
+                paidBy: formData.paidBy || 'conjunto'
             };
             saveTransaction(newT);
 
@@ -920,7 +1063,8 @@ export default function App() {
             description: '',
             status: 'pago',
             isRepeating: false,
-            accountId: 'acc_main'
+            accountId: 'acc_main',
+            paidBy: 'conjunto'
         });
         setIsFormOpen(true);
     };
@@ -935,7 +1079,8 @@ export default function App() {
             description: transaction.description,
             status: transaction.status,
             isRepeating: false,
-            accountId: transaction.accountId || 'acc_main'
+            accountId: transaction.accountId || 'acc_main',
+            paidBy: transaction.paidBy || 'conjunto'
         });
         setIsFormOpen(true);
     };
@@ -1578,16 +1723,36 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                         {isDarkMode ? <Sun size={16} className="text-amber-500" /> : <Moon size={16} className="text-indigo-500" />}
                                     </button>
                                     <button
+                                        onClick={() => { setShowProfileMenu(false); setIsPinModalOpen(true); }}
+                                        className="w-full flex items-center justify-between px-3 py-2 text-xs font-bold rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <Lock size={16} className={appPin ? "text-emerald-500" : "text-slate-400"} />
+                                            Bloqueio com PIN
+                                        </span>
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-extrabold ${appPin ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`}>
+                                            {appPin ? 'Ativo' : 'Desativado'}
+                                        </span>
+                                    </button>
+                                    <button
+                                        onClick={() => { setShowProfileMenu(false); setIsFamilyModalOpen(true); }}
+                                        className="w-full flex items-center justify-between px-3 py-2 text-xs font-bold rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <Heart size={16} className={activeFamilyCode ? "text-pink-500" : "text-slate-400"} />
+                                            Modo Casal & Família
+                                        </span>
+                                        {activeFamilyCode && (
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded font-extrabold bg-pink-100 dark:bg-pink-950 text-pink-600">
+                                                Conectado
+                                            </span>
+                                        )}
+                                    </button>
+                                    <button
                                         onClick={() => { setShowProfileMenu(false); setIsCategoryManagerOpen(true); }}
                                         className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
                                     >
                                         <Tag size={16} className="text-blue-500" /> Categorias
-                                    </button>
-                                    <button
-                                        onClick={() => { setShowProfileMenu(false); setIsFamilyModalOpen(true); }}
-                                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
-                                    >
-                                        <Users size={16} className="text-emerald-500" /> Modo Família
                                     </button>
                                     <button
                                         onClick={() => { setShowProfileMenu(false); setApiKeyInput(geminiApiKey); setIsApiKeyModalOpen(true); }}
@@ -1824,6 +1989,14 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                                                             <span>{accounts.find(a => a.id === transaction.accountId)?.name || 'Conta'}</span>
                                                                             <span>•</span>
                                                                             <span>{new Date(transaction.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}</span>
+                                                                            {transaction.paidBy && transaction.paidBy !== 'conjunto' && (
+                                                                                <>
+                                                                                    <span>•</span>
+                                                                                    <span className={`px-1.5 py-0.5 rounded font-extrabold text-[10px] ${transaction.paidBy === 'marido' ? 'bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300' : 'bg-pink-100 dark:bg-pink-950/80 text-pink-700 dark:text-pink-300'}`}>
+                                                                                        {transaction.paidBy === 'marido' ? '👦 Você' : '👧 Esposa'}
+                                                                                    </span>
+                                                                                </>
+                                                                            )}
                                                                         </div>
                                                                     </div>
                                                                 </div>
@@ -2559,6 +2732,33 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                     </div>
                                 </div>
 
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Quem Pagou / Responsável</label>
+                                    <div className="grid grid-cols-3 gap-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl">
+                                        <button
+                                            type="button"
+                                            onClick={() => setFormData({ ...formData, paidBy: 'marido' })}
+                                            className={`py-2 px-1 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 ${formData.paidBy === 'marido' ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500'}`}
+                                        >
+                                            <span>👦</span> <span>Você</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setFormData({ ...formData, paidBy: 'esposa' })}
+                                            className={`py-2 px-1 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 ${formData.paidBy === 'esposa' ? 'bg-white dark:bg-slate-700 text-pink-600 dark:text-pink-400 shadow-sm' : 'text-slate-500'}`}
+                                        >
+                                            <span>👧</span> <span>Esposa</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setFormData({ ...formData, paidBy: 'conjunto' })}
+                                            className={`py-2 px-1 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 ${formData.paidBy === 'conjunto' ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-500'}`}
+                                        >
+                                            <span>👥</span> <span>Casal</span>
+                                        </button>
+                                    </div>
+                                </div>
+
                                 {formData.type !== 'investimento' && !editingId && (
                                     <div className="pt-1">
                                         <label className="flex items-center gap-3 p-3.5 bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50 rounded-2xl cursor-pointer">
@@ -2801,66 +3001,121 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                     </div>
                 )}
 
-                {/* Modal Modo Família */}
+                {/* Modal Modo Família & Casal Aprimorado */}
                 {isFamilyModalOpen && (
                     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
                         <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsFamilyModalOpen(false)}></div>
-                        <div className="relative bg-white dark:bg-slate-900 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl animate-in slide-in-from-bottom-full duration-300">
-                            <div className="flex justify-between items-center mb-6">
-                                <h2 className="text-xl font-black text-slate-800 dark:text-white flex items-center gap-2">
-                                    <Users className="text-emerald-500" size={24} /> Modo Família & Casal
-                                </h2>
+                        <div className="relative bg-white dark:bg-slate-900 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl animate-in slide-in-from-bottom-full duration-300 max-h-[90vh] overflow-y-auto">
+                            <div className="flex justify-between items-center mb-4">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="w-10 h-10 rounded-2xl bg-pink-500/10 text-pink-600 dark:text-pink-400 flex items-center justify-center">
+                                        <Heart size={22} className="fill-pink-500/20" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-black text-slate-800 dark:text-white">Modo Casal & Família</h2>
+                                        <p className="text-xs text-slate-400">Finanças compartilhadas a dois</p>
+                                    </div>
+                                </div>
                                 <button onClick={() => setIsFamilyModalOpen(false)} className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 rounded-2xl">
                                     <X size={20} />
                                 </button>
                             </div>
 
-                            <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">
-                                Conecte-se com seu cônjuge ou grupo familiar inserindo o mesmo código de sincronização.
-                            </p>
+                            {activeFamilyCode ? (
+                                <div className="space-y-4">
+                                    <div className="p-4 bg-pink-50 dark:bg-pink-950/40 border border-pink-100 dark:border-pink-900/50 rounded-3xl text-center space-y-2">
+                                        <p className="text-xs font-bold text-pink-600 dark:text-pink-400 uppercase tracking-wider">Código de Acesso do Casal</p>
+                                        <div className="flex items-center justify-center gap-2">
+                                            <span className="text-2xl font-black tracking-widest text-slate-800 dark:text-white font-mono bg-white dark:bg-slate-900 px-4 py-2 rounded-2xl border border-pink-200 dark:border-pink-800">
+                                                {activeFamilyCode}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    if (navigator.clipboard) {
+                                                        navigator.clipboard.writeText(activeFamilyCode);
+                                                        showToast("Código copiado! Envie para sua esposa.");
+                                                    }
+                                                }}
+                                                className="p-3 bg-pink-600 hover:bg-pink-700 text-white rounded-2xl transition active:scale-95"
+                                                title="Copiar Código"
+                                            >
+                                                <Copy size={18} />
+                                            </button>
+                                        </div>
+                                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                            Sua esposa só precisa digitar esse código no celular dela para vocês compartilharem tudo!
+                                        </p>
+                                    </div>
 
-                            <form onSubmit={(e) => {
-                                e.preventDefault();
-                                if (!familyCodeInput.trim()) return;
-                                const code = familyCodeInput.trim().toUpperCase();
-                                setActiveFamilyCode(code);
-                                localStorage.setItem('fp_family_code', code);
-                                setIsFamilyModalOpen(false);
-                                showToast(`Conectado ao grupo familiar: ${code}!`);
-                            }}>
-                                <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Código da Família</label>
-                                <input
-                                    type="text"
-                                    value={familyCodeInput}
-                                    onChange={(e) => setFamilyCodeInput(e.target.value.toUpperCase())}
-                                    placeholder="Ex: FAMILIA-SILVA"
-                                    className="w-full text-xl font-black text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 tracking-widest uppercase outline-none mb-6"
-                                />
+                                    {familyData?.members && familyData.members.length > 0 && (
+                                        <div>
+                                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Membros Conectados</p>
+                                            <div className="space-y-2">
+                                                {familyData.members.map((m, idx) => (
+                                                    <div key={idx} className="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-100 dark:border-slate-800">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 flex items-center justify-center text-xs font-black">
+                                                                {m.user_email ? m.user_email[0].toUpperCase() : 'U'}
+                                                            </div>
+                                                            <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                                                                {m.user_email === supabaseUser?.email ? `${m.user_email} (Você)` : m.user_email}
+                                                            </span>
+                                                        </div>
+                                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-600">
+                                                            {m.role === 'owner' ? 'Criador' : 'Conectado'}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
 
-                                <div className="space-y-3">
+                                    <button
+                                        type="button"
+                                        onClick={handleLeaveFamilyGroup}
+                                        className="w-full bg-slate-100 dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-600 dark:text-slate-400 hover:text-rose-600 font-bold rounded-2xl p-3 text-xs transition"
+                                    >
+                                        Desconectar do Modo Casal
+                                    </button>
+                                </div>
+                            ) : (
+                                <form onSubmit={handleJoinOrCreateFamily} className="space-y-4">
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                        Crie um código de casal ou insira o código existente para conectar o celular seu e da sua esposa à mesma conta de finanças.
+                                    </p>
+
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Nome do Casal / Família (Opcional)</label>
+                                        <input
+                                            type="text"
+                                            value={familyNameInput}
+                                            onChange={(e) => setFamilyNameInput(e.target.value)}
+                                            placeholder="Ex: Finanças do Casal"
+                                            className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-pink-500"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Código de Vínculo</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            value={familyCodeInput}
+                                            onChange={(e) => setFamilyCodeInput(e.target.value.toUpperCase())}
+                                            placeholder="Ex: CASAL-LUIS-2026"
+                                            className="w-full text-lg font-black font-mono tracking-wider text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 outline-none focus:ring-2 focus:ring-pink-500 uppercase"
+                                        />
+                                    </div>
+
                                     <button
                                         type="submit"
-                                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-2xl p-4 text-sm shadow-md"
+                                        className="w-full bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 text-white font-black py-4 rounded-2xl text-sm shadow-lg shadow-pink-500/25 transition active:scale-98"
                                     >
-                                        Conectar / Salvar Grupo
+                                        Conectar e Sincronizar Casal
                                     </button>
-
-                                    {activeFamilyCode && (
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setActiveFamilyCode(null);
-                                                localStorage.removeItem('fp_family_code');
-                                                setIsFamilyModalOpen(false);
-                                                showToast("Você saiu do grupo familiar.");
-                                            }}
-                                            className="w-full bg-slate-100 dark:bg-slate-800 text-rose-500 font-bold rounded-2xl p-3 text-xs"
-                                        >
-                                            Desconectar do Modo Família
-                                        </button>
-                                    )}
-                                </div>
-                            </form>
+                                </form>
+                            )}
                         </div>
                     </div>
                 )}
@@ -3051,87 +3306,174 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                     </div>
                 )}
 
-                {/* Modal de Configuração do Supabase (Credenciais) */}
-                {isCloudConfigModalOpen && (
+                {/* Modal de Configuração do PIN (Segurança) */}
+                {isPinModalOpen && (
                     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-                        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsCloudConfigModalOpen(false)}></div>
-                        <div className="relative bg-white dark:bg-slate-900 w-full max-w-lg rounded-t-3xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-full duration-300 max-h-[90vh] overflow-y-auto">
-                            <div className="flex justify-between items-center mb-4">
+                        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsPinModalOpen(false)}></div>
+                        <div className="relative bg-white dark:bg-slate-900 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-full duration-300">
+                            <div className="flex justify-between items-center mb-6">
                                 <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-2xl bg-emerald-600/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                                        <Database size={22} />
+                                    <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                                        <Lock size={22} />
                                     </div>
                                     <div>
-                                        <h2 className="text-xl font-black text-slate-800 dark:text-white">Conectar Supabase</h2>
-                                        <p className="text-xs text-slate-400">Banco de Dados PostgreSQL na Nuvem</p>
+                                        <h2 className="text-xl font-black text-slate-800 dark:text-white">PIN de Acesso</h2>
+                                        <p className="text-xs text-slate-400">Proteção ao abrir o aplicativo</p>
                                     </div>
                                 </div>
-                                <button onClick={() => setIsCloudConfigModalOpen(false)} className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 rounded-2xl">
+                                <button onClick={() => setIsPinModalOpen(false)} className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 rounded-2xl">
                                     <X size={20} />
                                 </button>
                             </div>
 
-                            <div className="bg-blue-50 dark:bg-blue-950/40 p-4 rounded-2xl border border-blue-100 dark:border-blue-900/50 mb-6 text-xs space-y-2 text-slate-600 dark:text-slate-300 leading-relaxed">
-                                <p className="font-bold text-blue-700 dark:text-blue-300">Como conectar seu projeto:</p>
-                                <ol className="list-decimal list-inside space-y-1">
-                                    <li>Crie um projeto gratuito em <strong>supabase.com</strong>.</li>
-                                    <li>No painel do Supabase, vá em <strong>SQL Editor</strong> e execute o script <code>supabase/schema.sql</code>.</li>
-                                    <li>Vá em <strong>Project Settings → API</strong> e copie a <strong>URL</strong> e a <strong>Anon Key</strong>.</li>
-                                </ol>
-                            </div>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">
+                                Defina uma senha rápida de 4 números. Toda vez que abrir o app no celular ou no PC, será exigido esse PIN para ver os saldos.
+                            </p>
 
-                            <form onSubmit={handleSaveCloudConfig} className="space-y-4">
+                            <form onSubmit={handleSetNewPin} className="space-y-4">
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Project URL</label>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Novo PIN (4 dígitos)</label>
                                     <input
-                                        type="url"
+                                        type="password"
+                                        maxLength={4}
+                                        pattern="[0-9]*"
+                                        inputMode="numeric"
                                         required
-                                        value={configUrlInput}
-                                        onChange={(e) => setConfigUrlInput(e.target.value)}
-                                        placeholder="https://xyzcompany.supabase.co"
-                                        className="w-full text-xs font-mono text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                        value={newPinInput}
+                                        onChange={(e) => setNewPinInput(e.target.value.replace(/\D/g, ''))}
+                                        placeholder="••••"
+                                        className="w-full text-center text-3xl font-black tracking-widest text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 outline-none focus:ring-2 focus:ring-emerald-500"
                                     />
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Anon Public Key</label>
-                                    <textarea
-                                        rows={3}
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Confirme o PIN</label>
+                                    <input
+                                        type="password"
+                                        maxLength={4}
+                                        pattern="[0-9]*"
+                                        inputMode="numeric"
                                         required
-                                        value={configKeyInput}
-                                        onChange={(e) => setConfigKeyInput(e.target.value)}
-                                        placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                                        className="w-full text-xs font-mono text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                        value={confirmPinInput}
+                                        onChange={(e) => setConfirmPinInput(e.target.value.replace(/\D/g, ''))}
+                                        placeholder="••••"
+                                        className="w-full text-center text-3xl font-black tracking-widest text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 outline-none focus:ring-2 focus:ring-emerald-500"
                                     />
                                 </div>
 
                                 <div className="pt-2 space-y-2">
                                     <button
                                         type="submit"
-                                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3.5 rounded-2xl text-sm shadow-md transition"
+                                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4 rounded-2xl text-sm shadow-lg shadow-emerald-600/25 transition active:scale-98"
                                     >
-                                        Salvar e Conectar
+                                        Salvar e Ativar PIN
                                     </button>
 
-                                    {supabaseConfig.isConfigured && (
+                                    {appPin && (
                                         <button
                                             type="button"
-                                            onClick={() => {
-                                                clearSupabaseConfig();
-                                                setSupabaseConfigState(getSupabaseConfig());
-                                                setConfigUrlInput('');
-                                                setConfigKeyInput('');
-                                                setIsCloudConfigModalOpen(false);
-                                                showToast("Configuração do Supabase removida.");
-                                            }}
-                                            className="w-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-rose-500 font-bold py-2.5 rounded-2xl text-xs transition"
+                                            onClick={handleRemoveAppPin}
+                                            className="w-full bg-slate-100 dark:bg-slate-800 text-rose-500 font-bold py-3 rounded-2xl text-xs transition hover:bg-rose-50 dark:hover:bg-rose-950/40"
                                         >
-                                            Desconectar Supabase
+                                            Desativar Bloqueio por PIN
                                         </button>
                                     )}
                                 </div>
                             </form>
+                        </div>
+                    </div>
+                )}
 
+                {/* ========================================================================= */}
+                {/* TELA DE BLOQUEIO POR PIN (APP LOCK SCREEN OVERLAY) */}
+                {/* ========================================================================= */}
+                {isAppLocked && (
+                    <div className="fixed inset-0 z-[100] bg-slate-950/95 backdrop-blur-xl flex flex-col items-center justify-between p-6 sm:p-10 select-none animate-in fade-in duration-300">
+                        {/* Cabeçalho do Bloqueio */}
+                        <div className="text-center pt-8 space-y-3">
+                            <div className="w-16 h-16 rounded-3xl bg-blue-600/20 border border-blue-500/30 text-blue-400 flex items-center justify-center mx-auto shadow-2xl shadow-blue-500/20 animate-pulse">
+                                <Lock size={32} />
+                            </div>
+                            <h1 className="text-2xl font-black text-white tracking-tight">FinançasPro</h1>
+                            <p className="text-xs text-slate-400 font-medium">Digite seu PIN de 4 dígitos para acessar</p>
+                        </div>
+
+                        {/* Indicador visual de bolinhas do PIN */}
+                        <div className="my-auto py-6">
+                            <div className={`flex items-center justify-center gap-4 transition-transform ${pinError ? 'animate-bounce text-rose-500' : ''}`}>
+                                {[0, 1, 2, 3].map((idx) => {
+                                    const isFilled = enteredPin.length > idx;
+                                    return (
+                                        <div
+                                            key={idx}
+                                            className={`w-4 h-4 rounded-full transition-all duration-200 ${
+                                                pinError
+                                                    ? 'bg-rose-500 scale-125 ring-4 ring-rose-500/30'
+                                                    : isFilled
+                                                    ? 'bg-blue-500 scale-125 ring-4 ring-blue-500/30 shadow-lg shadow-blue-500/50'
+                                                    : 'bg-slate-800 border border-slate-700'
+                                            }`}
+                                        />
+                                    );
+                                })}
+                            </div>
+                            {pinError && (
+                                <p className="text-center text-xs font-bold text-rose-400 mt-4 animate-in fade-in">
+                                    PIN incorreto. Tente novamente.
+                                </p>
+                            )}
+                        </div>
+
+                        {/* Teclado Numérico Tátil (Touch Keypad) */}
+                        <div className="w-full max-w-xs pb-6">
+                            <div className="grid grid-cols-3 gap-4 mb-4">
+                                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
+                                    <button
+                                        key={num}
+                                        type="button"
+                                        onClick={() => handlePinKeyPress(String(num))}
+                                        className="h-16 rounded-3xl bg-slate-900/80 hover:bg-slate-800 active:bg-blue-600/40 border border-slate-800 text-white font-black text-2xl flex items-center justify-center transition active:scale-90 shadow-lg"
+                                    >
+                                        {num}
+                                    </button>
+                                ))}
+                                <button
+                                    type="button"
+                                    onClick={() => setEnteredPin('')}
+                                    className="h-16 rounded-3xl bg-transparent hover:bg-slate-900 text-slate-500 font-bold text-xs flex items-center justify-center transition active:scale-95 uppercase tracking-wider"
+                                >
+                                    Limpar
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handlePinKeyPress('0')}
+                                    className="h-16 rounded-3xl bg-slate-900/80 hover:bg-slate-800 active:bg-blue-600/40 border border-slate-800 text-white font-black text-2xl flex items-center justify-center transition active:scale-90 shadow-lg"
+                                >
+                                    0
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handlePinDelete}
+                                    className="h-16 rounded-3xl bg-transparent hover:bg-slate-900 text-slate-400 flex items-center justify-center transition active:scale-95 text-lg"
+                                >
+                                    ⌫
+                                </button>
+                            </div>
+
+                            {/* Botão de Emergência */}
+                            <div className="text-center pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (window.confirm("Esqueceu o PIN? Deseja redefinir entrando novamente na sua conta?")) {
+                                            handleRemoveAppPin();
+                                        }
+                                    }}
+                                    className="text-[11px] font-bold text-slate-500 hover:text-slate-300 transition"
+                                >
+                                    Esqueci meu PIN
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}
