@@ -991,18 +991,22 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                     generationConfig: { temperature: 0.2 }
                 };
 
-                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey.trim()}`, {
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${geminiApiKey.trim()}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
 
-                if (!res.ok) throw new Error('API Error ' + res.status);
                 const json = await res.json();
+                if (!res.ok || json.error) {
+                    throw new Error(json.error?.message || `Erro ${res.status}`);
+                }
+
                 const replyText = json.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
 
                 if (replyText.includes('"action"') && replyText.includes('"add"')) {
-                    const cleanJson = replyText.replace(/```json/g, '').replace(/```/g, '').trim();
+                    const jsonMatch = replyText.match(/\{[\s\S]*\}/);
+                    const cleanJson = jsonMatch ? jsonMatch[0] : replyText.replace(/```json/g, '').replace(/```/g, '').trim();
                     const data = JSON.parse(cleanJson);
                     const newT = {
                         id: 'tx_' + Date.now().toString(),
@@ -1028,7 +1032,7 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                 setChatHistory(prev => [...prev, {
                     id: Date.now(),
                     role: 'bot',
-                    text: "Tive um problema ao conectar com a API do Gemini. Verifique sua chave nas configurações."
+                    text: `Erro ao conectar com o Gemini: ${err.message || 'Verifique sua chave nas configurações.'}`
                 }]);
             }
         } else {
@@ -1133,16 +1137,24 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                     generationConfig: { temperature: 0.1 }
                 };
 
-                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey.trim()}`, {
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${geminiApiKey.trim()}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
 
                 const json = await res.json();
+                if (!res.ok || json.error) {
+                    throw new Error(json.error?.message || `Erro ${res.status}`);
+                }
+
                 const replyText = json.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-                const cleanJson = replyText.replace(/```json/g, '').replace(/```/g, '').trim();
-                const data = JSON.parse(cleanJson);
+                const jsonMatch = replyText.match(/\{[\s\S]*\}/);
+                if (!jsonMatch) {
+                    throw new Error("Não foi possível identificar os dados no recibo.");
+                }
+
+                const data = JSON.parse(jsonMatch[0]);
 
                 setFormData(prev => ({
                     ...prev,
@@ -1151,10 +1163,10 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                     description: data.description || prev.description,
                     category: data.category || 'Alimentação'
                 }));
-                showToast("Recibo lido com sucesso!");
+                showToast(`Recibo lido: ${data.description || ''} (${formatCurrency(data.amount || 0)})!`);
             } catch (err) {
                 console.error(err);
-                showToast("Não foi possível ler os dados da foto. Tente uma imagem mais clara.");
+                showToast("Erro ao processar recibo: " + (err.message || 'tente uma foto mais nítida.'));
             }
             setIsScanningReceipt(false);
         };
