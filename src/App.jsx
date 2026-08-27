@@ -131,22 +131,134 @@ const safeGet = (key, fallback) => {
 };
 
 export default function App() {
+    // 1. Estados Gerais de UI e Tema
     const [showProfileMenu, setShowProfileMenu] = useState(false);
     const [isDarkMode, setIsDarkMode] = useState(() => safeGet('fp_theme', false));
-
-    // PWA Install Prompt
+    const [toastMsg, setToastMsg] = useState('');
     const [deferredPrompt, setDeferredPrompt] = useState(null);
     const [isInstallable, setIsInstallable] = useState(false);
 
-    useEffect(() => {
-        const handleBeforeInstallPrompt = (e) => {
-            e.preventDefault();
-            setDeferredPrompt(e);
-            setIsInstallable(true);
-        };
-        window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-        return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    }, []);
+    // 2. Estados de Navegação e Filtros
+    const [currentDate, setCurrentDate] = useState(new Date());
+    const [activeTab, setActiveTab] = useState('inicio'); // 'inicio' | 'analise' | 'calendario' | 'investimentos'
+    const [analysisView, setAnalysisView] = useState('mes');
+    const [selectedDay, setSelectedDay] = useState(new Date().getDate());
+    const [searchQuery, setSearchQuery] = useState('');
+    const [filterType, setFilterType] = useState('todos');
+
+    // 3. Modais e Formulários
+    const [isFormOpen, setIsFormOpen] = useState(false);
+    const [editingId, setEditingId] = useState(null);
+    const [transactionToDelete, setTransactionToDelete] = useState(null);
+    const [cancelFutureRepeats, setCancelFutureRepeats] = useState(true);
+    const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
+    const [editingCategoryGoal, setEditingCategoryGoal] = useState(null);
+    const [goalAmountInput, setGoalAmountInput] = useState('');
+    const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
+    const [newCatData, setNewCatData] = useState({ name: '', type: 'saida', color: '#3b82f6' });
+    const [isFamilyModalOpen, setIsFamilyModalOpen] = useState(false);
+    const [familyCodeInput, setFamilyCodeInput] = useState('');
+    const [activeFamilyCode, setActiveFamilyCode] = useState(() => {
+        try { return localStorage.getItem('fp_family_code') || null; } catch(e) { return null; }
+    });
+    const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
+    const [geminiApiKey, setGeminiApiKey] = useState(() => {
+        try { return localStorage.getItem('fp_gemini_key') || ''; } catch(e) { return ''; }
+    });
+    const [apiKeyInput, setApiKeyInput] = useState('');
+    const [isPayInvoiceModalOpen, setIsPayInvoiceModalOpen] = useState(false);
+    const [invoiceAccountToPay, setInvoiceAccountToPay] = useState(null);
+    const [invoiceSourceAccount, setInvoiceSourceAccount] = useState('acc_main');
+
+    // 4. Assistente IA FinBot
+    const [isAssistantOpen, setIsAssistantOpen] = useState(false);
+    const [chatInput, setChatInput] = useState('');
+    const [isAiTyping, setIsAiTyping] = useState(false);
+    const [isScanningReceipt, setIsScanningReceipt] = useState(false);
+    const [chatHistory, setChatHistory] = useState([
+        {
+            id: 1,
+            role: 'bot',
+            text: 'Olá! Sou o FinBot, seu copiloto de finanças. Posso te dar dicas de economia, analisar seu mês ou registrar gastos para você! Tente digitar por exemplo: "Gastei 45 no mercado" ou "Recebi 1200 de freelance".'
+        }
+    ]);
+    const chatEndRef = useRef(null);
+
+    // 5. Estados de Dados Principais (com persistência LocalStorage segura)
+    const [transactions, setTransactions] = useState(() => safeGet('fp_transactions', initialSampleTransactions));
+    const [repeatingRules, setRepeatingRules] = useState(() => safeGet('fp_rules', initialSampleRules));
+    const [monthlyGoals, setMonthlyGoals] = useState(() => safeGet('fp_goals', { 'Casa': 2500, 'Alimentação': 1200, 'Transporte': 600, 'Lazer': 500 }));
+    const [customCategories, setCustomCategories] = useState(() => safeGet('fp_custom_categories', []));
+    const [accounts, setAccounts] = useState(() => safeGet('fp_accounts', defaultAccounts));
+    const [formData, setFormData] = useState({
+        type: 'saida',
+        amount: '',
+        category: 'Casa',
+        date: new Date().toISOString().split('T')[0],
+        description: '',
+        status: 'pago',
+        isRepeating: false,
+        accountId: 'acc_main'
+    });
+
+    // 6. Estados do Supabase (Nuvem & Auth)
+    const [supabaseUser, setSupabaseUser] = useState(null);
+    const [supabaseConfig, setSupabaseConfigState] = useState(() => getSupabaseConfig());
+    const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+    const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+    const [authMode, setAuthMode] = useState('login'); // 'login' | 'signup' | 'forgot'
+    const [authEmail, setAuthEmail] = useState('');
+    const [authPassword, setAuthPassword] = useState('');
+    const [authLoading, setAuthLoading] = useState(false);
+    const [authError, setAuthError] = useState('');
+    const [authSuccessMsg, setAuthSuccessMsg] = useState('');
+    const [isCloudConfigModalOpen, setIsCloudConfigModalOpen] = useState(false);
+    const [configUrlInput, setConfigUrlInput] = useState('');
+    const [configKeyInput, setConfigKeyInput] = useState('');
+    const [isMigrating, setIsMigrating] = useState(false);
+
+    // 7. Estados Pull-to-Refresh
+    const [pullY, setPullY] = useState(0);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const touchStartRef = useRef(0);
+    const isPullingRef = useRef(false);
+
+    // =========================================================================
+    // FUNÇÕES AUXILIARES & SUPABASE
+    // =========================================================================
+    const showToast = (msg) => {
+        setToastMsg(msg);
+        setTimeout(() => setToastMsg(''), 3500);
+    };
+
+    const loadCloudData = async (user) => {
+        if (!user) return;
+        try {
+            setIsCloudSyncing(true);
+            const cloudData = await fetchAllUserData();
+            if (cloudData) {
+                if (cloudData.transactions && cloudData.transactions.length > 0) {
+                    setTransactions(cloudData.transactions);
+                }
+                if (cloudData.accounts && cloudData.accounts.length > 0) {
+                    setAccounts(cloudData.accounts);
+                }
+                if (cloudData.repeatingRules && cloudData.repeatingRules.length > 0) {
+                    setRepeatingRules(cloudData.repeatingRules);
+                }
+                if (cloudData.monthlyGoals && Object.keys(cloudData.monthlyGoals).length > 0) {
+                    setMonthlyGoals(cloudData.monthlyGoals);
+                }
+                if (cloudData.customCategories && cloudData.customCategories.length > 0) {
+                    setCustomCategories(cloudData.customCategories);
+                }
+            }
+        } catch (err) {
+            console.error('Erro ao sincronizar com nuvem:', err);
+        } finally {
+            setIsCloudSyncing(false);
+        }
+    };
 
     const handleInstallPWA = async () => {
         if (!deferredPrompt) {
@@ -162,21 +274,22 @@ export default function App() {
         setDeferredPrompt(null);
     };
 
-    // SISTEMA DE NOTIFICAÇÕES (Toasts)
-    const [toastMsg, setToastMsg] = useState('');
-    const showToast = (msg) => {
-        setToastMsg(msg);
-        setTimeout(() => setToastMsg(''), 3500);
-    };
-
     // =========================================================================
-    // SISTEMA PULL-TO-REFRESH (PWA & MOBILE IPHONE)
+    // HOOKS USEEFFECT
     // =========================================================================
-    const [pullY, setPullY] = useState(0);
-    const [isRefreshing, setIsRefreshing] = useState(false);
-    const touchStartRef = useRef(0);
-    const isPullingRef = useRef(false);
 
+    // PWA Install Prompt Hook
+    useEffect(() => {
+        const handleBeforeInstallPrompt = (e) => {
+            e.preventDefault();
+            setDeferredPrompt(e);
+            setIsInstallable(true);
+        };
+        window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+        return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    }, []);
+
+    // Pull-to-Refresh Touch Hook
     useEffect(() => {
         const handleTouchStart = (e) => {
             if (window.scrollY <= 5 && !isRefreshing) {
@@ -192,7 +305,6 @@ export default function App() {
             const currentY = e.touches[0].clientY;
             const diff = currentY - touchStartRef.current;
             if (diff > 0 && window.scrollY <= 5) {
-                // Efeito elástico suave estilo iOS
                 const pullDistance = Math.min(diff * 0.45, 90);
                 setPullY(pullDistance);
                 if (pullDistance > 15 && e.cancelable) {
@@ -245,131 +357,11 @@ export default function App() {
         };
     }, [isRefreshing, supabaseUser, pullY]);
 
-    const [currentDate, setCurrentDate] = useState(new Date());
-    const [activeTab, setActiveTab] = useState('inicio'); // 'inicio' | 'analise' | 'calendario' | 'investimentos'
-    const [analysisView, setAnalysisView] = useState('mes');
-    const [selectedDay, setSelectedDay] = useState(new Date().getDate());
-
-    // Modais e Estados
-    const [isFormOpen, setIsFormOpen] = useState(false);
-    const [editingId, setEditingId] = useState(null);
-    const [transactionToDelete, setTransactionToDelete] = useState(null);
-    const [cancelFutureRepeats, setCancelFutureRepeats] = useState(true);
-
-    const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
-    const [editingCategoryGoal, setEditingCategoryGoal] = useState(null);
-    const [goalAmountInput, setGoalAmountInput] = useState('');
-
-    const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
-    const [newCatData, setNewCatData] = useState({ name: '', type: 'saida', color: '#3b82f6' });
-
-    const [isFamilyModalOpen, setIsFamilyModalOpen] = useState(false);
-    const [familyCodeInput, setFamilyCodeInput] = useState('');
-    const [activeFamilyCode, setActiveFamilyCode] = useState(() => {
-        try { return localStorage.getItem('fp_family_code') || null; } catch(e) { return null; }
-    });
-
-    const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
-    const [geminiApiKey, setGeminiApiKey] = useState(() => {
-        try { return localStorage.getItem('fp_gemini_key') || ''; } catch(e) { return ''; }
-    });
-    const [apiKeyInput, setApiKeyInput] = useState('');
-
-    const [searchQuery, setSearchQuery] = useState('');
-    const [filterType, setFilterType] = useState('todos');
-
-    // Pagamento de Fatura
-    const [isPayInvoiceModalOpen, setIsPayInvoiceModalOpen] = useState(false);
-    const [invoiceAccountToPay, setInvoiceAccountToPay] = useState(null);
-    const [invoiceSourceAccount, setInvoiceSourceAccount] = useState('acc_main');
-
-    // Assistente IA FinBot
-    const [isAssistantOpen, setIsAssistantOpen] = useState(false);
-    const [chatInput, setChatInput] = useState('');
-    const [isAiTyping, setIsAiTyping] = useState(false);
-    const [isScanningReceipt, setIsScanningReceipt] = useState(false);
-    const [chatHistory, setChatHistory] = useState([
-        {
-            id: 1,
-            role: 'bot',
-            text: 'Olá! Sou o FinBot, seu copiloto de finanças. Posso te dar dicas de economia, analisar seu mês ou registrar gastos para você! Tente digitar por exemplo: "Gastei 45 no mercado" ou "Recebi 1200 de freelance".'
-        }
-    ]);
-    const chatEndRef = useRef(null);
-
-    // Estados de Dados Principais (com persistência LocalStorage segura)
-    const [transactions, setTransactions] = useState(() => safeGet('fp_transactions', initialSampleTransactions));
-    const [repeatingRules, setRepeatingRules] = useState(() => safeGet('fp_rules', initialSampleRules));
-    const [monthlyGoals, setMonthlyGoals] = useState(() => safeGet('fp_goals', { 'Casa': 2500, 'Alimentação': 1200, 'Transporte': 600, 'Lazer': 500 }));
-    const [customCategories, setCustomCategories] = useState(() => safeGet('fp_custom_categories', []));
-    const [accounts, setAccounts] = useState(() => safeGet('fp_accounts', defaultAccounts));
-
-    const [formData, setFormData] = useState({
-        type: 'saida',
-        amount: '',
-        category: 'Casa',
-        date: new Date().toISOString().split('T')[0],
-        description: '',
-        status: 'pago',
-        isRepeating: false,
-        accountId: 'acc_main'
-    });
-
-
-    // =========================================================================
-    // ESTADOS E SINCRONIZAÇÃO SUPABASE (NUVEM & AUTH)
-    // =========================================================================
-    const [supabaseUser, setSupabaseUser] = useState(null);
-    const [supabaseConfig, setSupabaseConfigState] = useState(() => getSupabaseConfig());
-    const [isCloudSyncing, setIsCloudSyncing] = useState(false);
-    const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-    const [authMode, setAuthMode] = useState('login'); // 'login' | 'signup' | 'forgot'
-    const [authEmail, setAuthEmail] = useState('');
-    const [authPassword, setAuthPassword] = useState('');
-    const [authLoading, setAuthLoading] = useState(false);
-    const [authError, setAuthError] = useState('');
-    const [authSuccessMsg, setAuthSuccessMsg] = useState('');
-    const [isCloudConfigModalOpen, setIsCloudConfigModalOpen] = useState(false);
-    const [configUrlInput, setConfigUrlInput] = useState('');
-    const [configKeyInput, setConfigKeyInput] = useState('');
-    const [isMigrating, setIsMigrating] = useState(false);
-
-    // Carregar dados da nuvem quando usuário estiver autenticado
-    const loadCloudData = async (user) => {
-        if (!user) return;
-        try {
-            setIsCloudSyncing(true);
-            const cloudData = await fetchAllUserData();
-            if (cloudData) {
-                if (cloudData.transactions && cloudData.transactions.length > 0) {
-                    setTransactions(cloudData.transactions);
-                }
-                if (cloudData.accounts && cloudData.accounts.length > 0) {
-                    setAccounts(cloudData.accounts);
-                }
-                if (cloudData.repeatingRules && cloudData.repeatingRules.length > 0) {
-                    setRepeatingRules(cloudData.repeatingRules);
-                }
-                if (cloudData.monthlyGoals && Object.keys(cloudData.monthlyGoals).length > 0) {
-                    setMonthlyGoals(cloudData.monthlyGoals);
-                }
-                if (cloudData.customCategories && cloudData.customCategories.length > 0) {
-                    setCustomCategories(cloudData.customCategories);
-                }
-            }
-        } catch (err) {
-            console.error('Erro ao sincronizar com nuvem:', err);
-        } finally {
-            setIsCloudSyncing(false);
-        }
-    };
-
     // Inicialização do Supabase & Monitoramento de Sessão
     useEffect(() => {
         const supabase = getSupabase();
         if (!supabase) return;
 
-        // Obter sessão inicial
         supabase.auth.getSession().then(({ data: { session } }) => {
             if (session?.user) {
                 setSupabaseUser(session.user);
@@ -377,7 +369,6 @@ export default function App() {
             }
         });
 
-        // Ouvir mudanças de autenticação
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
             if (session?.user) {
                 setSupabaseUser(session.user);
@@ -395,7 +386,7 @@ export default function App() {
         };
     }, [supabaseConfig.isConfigured]);
 
-    // Subscrição em Tempo Real (Realtime) para sincronizar múltiplos dispositivos
+    // Subscrição em Tempo Real (Realtime)
     useEffect(() => {
         const supabase = getSupabase();
         if (!supabase || !supabaseUser) return;

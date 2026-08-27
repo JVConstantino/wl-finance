@@ -19,7 +19,6 @@ class ErrorBoundary extends React.Component {
 
   handleReset = () => {
     try {
-      // Limpa dados com erro se necessário
       window.location.reload();
     } catch (e) {
       window.location.href = '/';
@@ -29,6 +28,7 @@ class ErrorBoundary extends React.Component {
   handleClearCache = () => {
     try {
       localStorage.clear();
+      sessionStorage.clear();
       window.location.reload();
     } catch (e) {
       window.location.href = '/';
@@ -51,7 +51,8 @@ class ErrorBoundary extends React.Component {
           textAlign: 'center'
         }}>
           <div style={{
-            maxWidth: '420px',
+            maxWidth: '460px',
+            width: '100%',
             backgroundColor: '#1e293b',
             borderRadius: '24px',
             padding: '32px',
@@ -62,9 +63,26 @@ class ErrorBoundary extends React.Component {
             <h1 style={{ fontSize: '20px', fontWeight: '900', marginBottom: '8px' }}>
               FinançasPro
             </h1>
-            <p style={{ fontSize: '13px', color: '#94a3b8', marginBottom: '24px', lineHeight: '1.5' }}>
-              Ocorreu uma instabilidade no carregamento inicial. Clique no botão abaixo para restaurar o aplicativo.
+            <p style={{ fontSize: '13px', color: '#94a3b8', marginBottom: '16px', lineHeight: '1.5' }}>
+              Ocorreu uma instabilidade na inicialização.
             </p>
+            {this.state.error && (
+              <div style={{
+                backgroundColor: '#0f172a',
+                color: '#f43f5e',
+                padding: '12px',
+                borderRadius: '12px',
+                fontSize: '11px',
+                textAlign: 'left',
+                fontFamily: 'monospace',
+                marginBottom: '20px',
+                maxHeight: '120px',
+                overflowY: 'auto',
+                border: '1px solid #475569'
+              }}>
+                {this.state.error.toString()}
+              </div>
+            )}
             <button
               onClick={this.handleReset}
               style={{
@@ -77,7 +95,7 @@ class ErrorBoundary extends React.Component {
                 border: 'none',
                 cursor: 'pointer',
                 fontSize: '14px',
-                marginBottom: '12px'
+                marginBottom: '10px'
               }}
             >
               🔄 Recarregar Aplicativo
@@ -96,7 +114,7 @@ class ErrorBoundary extends React.Component {
                 fontSize: '12px'
               }}
             >
-              Limpar Cache Local
+              Limpar Cache & Reiniciar
             </button>
           </div>
         </div>
