@@ -317,19 +317,8 @@ export default function App() {
     const [invoiceAccountToPay, setInvoiceAccountToPay] = useState(null);
     const [invoiceSourceAccount, setInvoiceSourceAccount] = useState('acc_main');
 
-    // 4. Assistente IA FinBot
-    const [isAssistantOpen, setIsAssistantOpen] = useState(false);
-    const [chatInput, setChatInput] = useState('');
-    const [isAiTyping, setIsAiTyping] = useState(false);
+    // 4. Escaneamento de Recibos
     const [isScanningReceipt, setIsScanningReceipt] = useState(false);
-    const [chatHistory, setChatHistory] = useState([
-        {
-            id: 1,
-            role: 'bot',
-            text: 'Olá! Sou o FinBot, seu copiloto de finanças. Posso te dar dicas de economia, analisar seu mês ou registrar gastos para você! Tente digitar por exemplo: "Gastei 45 no mercado" ou "Recebi 1200 de freelance".'
-        }
-    ]);
-    const chatEndRef = useRef(null);
 
     // 5. Estados de Dados Principais (com persistência LocalStorage segura)
     const [transactions, setTransactions] = useState(() => safeGet('fp_transactions', initialSampleTransactions));
@@ -1265,8 +1254,8 @@ export default function App() {
             const categoriesList = analysisData.data.map(d => `${d.name}: ${formatCurrency(d.amount)} (${d.percentage.toFixed(0)}%)`).join(', ');
             const cofrinhosList = savingsGoals.map(g => `${g.title}: ${formatCurrency(g.currentAmount)} de meta ${formatCurrency(g.targetAmount)}`).join(', ');
 
-            const systemPrompt = `Você é o FinBot, consultor financeiro pessoal e empático especializado em finanças de casais.
-Você está conversando diretamente com o casal. Responda de forma estratégica, calorosa, motivadora e prática em português do Brasil.
+            const systemPrompt = `Você é o FinBot, consultor financeiro pessoal de elite e copiloto inteligente do casal.
+Você está conversando diretamente com o casal. Responda de forma estratégica, calorosa, motivadora e muito prática em português do Brasil.
 
 DADOS FINANCEIROS REAIS DO CASAL NESTE MOMENTO (${monthName}):
 - Receitas do Mês: ${formatCurrency(monthlySummary.receitas)}
@@ -1282,18 +1271,26 @@ DADOS FINANCEIROS REAIS DO CASAL NESTE MOMENTO (${monthName}):
 - Gastos Invisíveis (Microgastos <= R$35): ${formatCurrency(comparativeData.totalMicroAmount)} (${comparativeData.countMicro} compras)
 - Estimativa de Aposentadoria FIRE: Liberdade em ${fireSimulationData.yearsRemaining} anos e ${fireSimulationData.monthsExtra} meses (Meta FIRE: ${formatCurrency(fireSimulationData.fireTarget)})
 
-Pergunta ou mensagem do casal:
-"${messageToSend}"
+REGRA DE LANÇAMENTO AUTOMÁTICO DE TRANSAÇÃO:
+Se o casal pedir explicitamente para lançar/anotar/registrar um gasto, ganho ou aporte (ex: "Gastei 50 no mercado", "Comprei pizza 85", "Recebi 1200 de freela", "Investi 300 em ações"):
+Retorne APENAS um bloco JSON no seguinte formato:
+\`\`\`json
+{"action": "add_transaction", "type": "saida" | "entrada" | "investimento", "amount": 00.00, "description": "nome curto", "category": "categoria_adequada", "responseMessage": "texto caloroso confirmando o lançamento"}
+\`\`\`
+Categorias de saída: Casa, Alimentação, Transporte, Lazer, Saúde, Educação, Assinaturas, Outros.
+Entradas: Salário, Freelance, Rendimentos, Vendas.
+Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobiliários.
 
-Instruções:
-- Seja direto e acolhedor (1 a 3 parágrafos).
-- Use os números reais acima para dar conselhos e diagnósticos exatos.
-- Use emojis para tornar a leitura agradável.`;
+CASO CONTRÁRIO (perguntas, dúvidas, conselhos, análises financeiras, planejamento):
+Responda de forma humanizada, direta e acolhedora (1 a 3 parágrafos diretos ao ponto com emojis).
+
+Mensagem do casal:
+"${messageToSend}"`;
 
             const payload = {
                 contents: [{ parts: [{ text: systemPrompt }] }],
                 generationConfig: {
-                    temperature: 0.7,
+                    temperature: 0.4,
                     maxOutputTokens: 600
                 }
             };
@@ -1307,6 +1304,38 @@ Instruções:
             const json = await res.json();
             const rawResponse = json.candidates?.[0]?.content?.parts?.[0]?.text;
             if (!rawResponse) throw new Error(json.error?.message || "Sem resposta da IA");
+
+            if (rawResponse.includes('"action"') && rawResponse.includes('"add_transaction"')) {
+                const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    try {
+                        const parsedData = JSON.parse(jsonMatch[0]);
+                        const newT = {
+                            id: 'tx_' + Date.now().toString(),
+                            type: parsedData.type || 'saida',
+                            amount: parseFloat(parsedData.amount) || 0,
+                            category: parsedData.category || 'Outros',
+                            date: new Date().toISOString().split('T')[0],
+                            description: parsedData.description || 'Lançamento via FinBot',
+                            status: 'pago',
+                            accountId: 'acc_main',
+                            paidBy: 'conjunto'
+                        };
+                        saveTransaction(newT);
+                        const confirmMsg = parsedData.responseMessage || `✅ Lançamento registrado com sucesso! ${parsedData.type === 'entrada' ? 'Receita' : parsedData.type === 'investimento' ? 'Investimento' : 'Despesa'} de ${formatCurrency(parsedData.amount)} em "${parsedData.category}" (${parsedData.description}).`;
+                        const botMsg = {
+                            id: 'msg_bot_' + Date.now(),
+                            sender: 'finbot',
+                            text: confirmMsg,
+                            timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                        };
+                        setChatMessages(prev => [...prev, botMsg]);
+                        return;
+                    } catch (e) {
+                        console.warn("Falha ao parsear JSON de transação do bot:", e);
+                    }
+                }
+            }
 
             const botMsg = {
                 id: 'msg_bot_' + Date.now(),
@@ -2332,151 +2361,6 @@ Responda ESTRITAMENTE um objeto JSON no formato:
         }
         setTransactionToDelete(null);
         showToast("Registro excluído com sucesso!");
-    };
-
-    // Chatbot IA
-    useEffect(() => {
-        if (chatEndRef.current && isAssistantOpen) {
-            chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
-        }
-    }, [chatHistory, isAssistantOpen, isAiTyping]);
-
-    const handleBotChat = async (e) => {
-        e.preventDefault();
-        if (!chatInput.trim()) return;
-
-        const userText = chatInput.trim();
-        setChatHistory(prev => [...prev, { id: Date.now(), role: 'user', text: userText }]);
-        setChatInput('');
-        setIsAiTyping(true);
-
-        if (geminiApiKey.trim()) {
-            try {
-                const systemPrompt = `Você é o FinBot, assistente do FinançasPro. Responda em Português do Brasil de forma amigável e concisa.
-Resumo atual deste mês: Ganhos: R$ ${totals.receitas.toFixed(2)}, Gastos: R$ ${totals.despesas.toFixed(2)}, Saldo Geral: R$ ${totalLiquidBalance.toFixed(2)}.
-Se o usuário pedir para registrar um gasto, ganho ou aporte, retorne APENAS UM JSON no formato exato:
-{"action": "add", "type": "saida" | "entrada" | "investimento", "amount": numero_sem_cifrao, "description": "nome curto", "category": "escolha_uma"}
-Categorias de saída: Casa, Alimentação, Transporte, Lazer, Saúde, Educação, Assinaturas, Outros.
-Entradas: Salário, Freelance, Rendimentos, Vendas.
-Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobiliários.`;
-
-                const payload = {
-                    systemInstruction: { parts: [{ text: systemPrompt }] },
-                    contents: [{ parts: [{ text: userText }] }],
-                    generationConfig: { temperature: 0.2 }
-                };
-
-                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${geminiApiKey.trim()}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-
-                const json = await res.json();
-                if (!res.ok || json.error) {
-                    throw new Error(json.error?.message || `Erro ${res.status}`);
-                }
-
-                const replyText = json.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-
-                if (replyText.includes('"action"') && replyText.includes('"add"')) {
-                    const jsonMatch = replyText.match(/\{[\s\S]*\}/);
-                    const cleanJson = jsonMatch ? jsonMatch[0] : replyText.replace(/```json/g, '').replace(/```/g, '').trim();
-                    const data = JSON.parse(cleanJson);
-                    const newT = {
-                        id: 'tx_' + Date.now().toString(),
-                        type: data.type || 'saida',
-                        amount: parseFloat(data.amount) || 0,
-                        category: data.category || 'Outros',
-                        date: new Date().toISOString().split('T')[0],
-                        description: data.description || 'Novo Registro',
-                        status: 'pago',
-                        accountId: 'acc_main'
-                    };
-                    saveTransaction(newT);
-                    setChatHistory(prev => [...prev, {
-                        id: Date.now(),
-                        role: 'bot',
-                        text: `✅ Pronto! Registrei ${data.type === 'entrada' ? 'um ganho' : data.type === 'investimento' ? 'um investimento' : 'um gasto'} de ${formatCurrency(data.amount)} em "${data.category}" (${data.description}).`
-                    }]);
-                } else {
-                    setChatHistory(prev => [...prev, { id: Date.now(), role: 'bot', text: replyText }]);
-                }
-            } catch (err) {
-                console.error(err);
-                setChatHistory(prev => [...prev, {
-                    id: Date.now(),
-                    role: 'bot',
-                    text: `Erro ao conectar com o Gemini: ${err.message || 'Verifique sua chave nas configurações.'}`
-                }]);
-            }
-        } else {
-            setTimeout(() => {
-                const lower = userText.toLowerCase();
-                const matchNumber = lower.match(/(?:r\$|\$)?\s*(\d+(?:[.,]\d+)?)/);
-                const amount = matchNumber ? parseFloat(matchNumber[1].replace(',', '.')) : null;
-
-                if (amount && (lower.includes('gastei') || lower.includes('paguei') || lower.includes('comprei') || lower.includes('despesa'))) {
-                    let cat = 'Outros';
-                    if (lower.includes('mercado') || lower.includes('almoço') || lower.includes('comida') || lower.includes('ifood')) cat = 'Alimentação';
-                    else if (lower.includes('uber') || lower.includes('gasolina') || lower.includes('combustivel')) cat = 'Transporte';
-                    else if (lower.includes('luz') || lower.includes('água') || lower.includes('aluguel')) cat = 'Casa';
-                    else if (lower.includes('cinema') || lower.includes('jogo') || lower.includes('festa')) cat = 'Lazer';
-                    else if (lower.includes('farmacia') || lower.includes('remedio') || lower.includes('medico')) cat = 'Saúde';
-
-                    const desc = userText.replace(/gastei|paguei|comprei|no|na|com|de|r\$|\$/gi, '').trim() || 'Despesa Rápida';
-                    const newT = {
-                        id: 'tx_' + Date.now().toString(),
-                        type: 'saida',
-                        amount: amount,
-                        category: cat,
-                        date: new Date().toISOString().split('T')[0],
-                        description: desc,
-                        status: 'pago',
-                        accountId: 'acc_main'
-                    };
-                    saveTransaction(newT);
-                    setChatHistory(prev => [...prev, {
-                        id: Date.now(),
-                        role: 'bot',
-                        text: `✅ Anotado! Adicionei uma despesa de ${formatCurrency(amount)} em ${cat} ("${desc}").`
-                    }]);
-                } else if (amount && (lower.includes('recebi') || lower.includes('ganhei') || lower.includes('salario') || lower.includes('freela'))) {
-                    let cat = lower.includes('salario') ? 'Salário' : lower.includes('freela') ? 'Freelance' : 'Rendimentos';
-                    const newT = {
-                        id: 'tx_' + Date.now().toString(),
-                        type: 'entrada',
-                        amount: amount,
-                        category: cat,
-                        date: new Date().toISOString().split('T')[0],
-                        description: 'Receita Registrada',
-                        status: 'pago',
-                        accountId: 'acc_main'
-                    };
-                    saveTransaction(newT);
-                    setChatHistory(prev => [...prev, {
-                        id: Date.now(),
-                        role: 'bot',
-                        text: `🎉 Maravilha! Registrei uma receita de ${formatCurrency(amount)} em ${cat}.`
-                    }]);
-                } else if (lower.includes('saldo') || lower.includes('quanto') || lower.includes('resumo')) {
-                    setChatHistory(prev => [...prev, {
-                        id: Date.now(),
-                        role: 'bot',
-                        text: `📊 Aqui está o seu resumo do mês:\n• Receitas: ${formatCurrency(totals.receitas)}\n• Despesas: ${formatCurrency(totals.despesas)}\n• Investimentos: ${formatCurrency(totals.investimentos)}\n• Saldo Total Acumulado: ${formatCurrency(totalLiquidBalance)}`
-                    }]);
-                } else {
-                    setChatHistory(prev => [...prev, {
-                        id: Date.now(),
-                        role: 'bot',
-                        text: `Dica financeira: Procure guardar ao menos 20% das suas receitas em investimentos de liquidez diária para reserva de emergência antes de arriscar na renda variável.`
-                    }]);
-                }
-                setIsAiTyping(false);
-            }, 500);
-            return;
-        }
-        setIsAiTyping(false);
     };
 
     const handleReceiptScan = async (e) => {
@@ -4625,87 +4509,10 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                     </div>
                 </div>
 
-                {/* BOTÃO FLUTUANTE FINBOT */}
-                {!isFormOpen && !isPayInvoiceModalOpen && !isGoalModalOpen && !isCategoryManagerOpen && !isFamilyModalOpen && (
-                    <button
-                        onClick={() => setIsAssistantOpen(true)}
-                        className="fixed bottom-24 lg:bottom-8 right-5 lg:right-8 w-14 h-14 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-all z-30 active:scale-95"
-                        title="Assistente FinBot Copiloto"
-                    >
-                        <MessageSquare size={24} />
-                        <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-400 border-2 border-white dark:border-slate-900"></span>
-                        </span>
-                    </button>
-                )}
-
                 {/* ==================================================== */}
-                {/* MODAIS (CHATBOT, FORMULÁRIOS, FATURA, METAS, ETC.) */}
+                {/* MODAIS (FORMULÁRIOS, FATURA, METAS, ETC.) */}
                 {/* ==================================================== */}
-                {/* Modal FinBot */}
-                {isAssistantOpen && (
-                    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-                        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsAssistantOpen(false)}></div>
-                        <div className="relative bg-white dark:bg-slate-900 w-full max-w-md h-[82vh] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col animate-in slide-in-from-bottom-full duration-300 overflow-hidden">
-                            <div className="flex justify-between items-center p-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white shrink-0">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm">
-                                        <MessageSquare size={20} />
-                                    </div>
-                                    <div>
-                                        <h3 className="font-extrabold text-sm flex items-center gap-1.5">
-                                            FinBot Copiloto
-                                            <span className="bg-emerald-400 text-slate-950 text-[9px] font-black px-1.5 py-0.5 rounded-full">IA</span>
-                                        </h3>
-                                        <p className="text-[10px] text-blue-100">
-                                            {geminiApiKey ? 'Conectado com Gemini Pro' : 'Modo Inteligente Offline'}
-                                        </p>
-                                    </div>
-                                </div>
-                                <button onClick={() => setIsAssistantOpen(false)} className="p-2 hover:bg-white/20 rounded-full transition">
-                                    <X size={20} />
-                                </button>
-                            </div>
-
-                            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50 dark:bg-slate-950">
-                                {chatHistory.map(msg => (
-                                    <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                        <div className={`max-w-[82%] p-3.5 rounded-2xl text-xs sm:text-sm font-medium leading-relaxed ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-sm' : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-bl-sm shadow-sm'}`}>
-                                            {msg.text}
-                                        </div>
-                                    </div>
-                                ))}
-                                {isAiTyping && (
-                                    <div className="flex justify-start">
-                                        <div className="max-w-[80%] p-3 rounded-2xl text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 rounded-bl-sm shadow-sm flex items-center gap-2 font-bold">
-                                            <Loader2 className="animate-spin text-blue-600" size={14} /> FinBot está pensando...
-                                        </div>
-                                    </div>
-                                )}
-                                <div ref={chatEndRef}></div>
-                            </div>
-
-                            <form onSubmit={handleBotChat} className="p-3 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex gap-2 shrink-0 pb-safe">
-                                <input
-                                    type="text"
-                                    value={chatInput}
-                                    onChange={(e) => setChatInput(e.target.value)}
-                                    disabled={isAiTyping}
-                                    placeholder="Ex: 'Gastei 50 no mercado hoje'..."
-                                    className="flex-1 bg-slate-100 dark:bg-slate-800 border-transparent rounded-2xl px-4 py-3 text-xs sm:text-sm outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
-                                />
-                                <button
-                                    type="submit"
-                                    disabled={isAiTyping}
-                                    className="w-12 h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl flex items-center justify-center shrink-0 transition active:scale-95 disabled:opacity-50"
-                                >
-                                    <Send size={18} />
-                                </button>
-                            </form>
-                        </div>
-                    </div>
-                )}
+                {/* Modal Formulário Lançamento */}
 
                 {/* Modal Formulário Lançamento */}
                 {isFormOpen && (
