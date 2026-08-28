@@ -9,7 +9,8 @@ import {
     CalendarDays, MessageSquare, Send, Users, Camera, Moon, Sun,
     Wifi, History, Sparkles, Activity, ArrowRightLeft, Key, Check, Info,
     Download, ShieldCheck, Layers, ChevronDown, Database, LogIn, LogOut, RefreshCw,
-    Lock, Unlock, Shield, Heart, Copy, ShoppingCart, PiggyBank, Bell, CheckSquare, Square, Flame
+    Lock, Unlock, Shield, Heart, Copy, ShoppingCart, PiggyBank, Bell, CheckSquare, Square, Flame,
+    Mic, MicOff, Scale, Share2
 } from 'lucide-react';
 import {
     getSupabase, getSupabaseConfig, saveSupabaseConfig, clearSupabaseConfig,
@@ -59,32 +60,35 @@ const initialSampleTransactions = [
     {
         id: 'tx_init_1',
         type: 'entrada',
-        amount: 6500,
+        amount: 5200.00,
         category: 'Salário',
         date: new Date().toISOString().split('T')[0],
         description: 'Salário Mensal',
         status: 'pago',
-        accountId: 'acc_main'
+        accountId: 'acc_main',
+        paidBy: 'marido'
     },
     {
         id: 'tx_init_2',
         type: 'saida',
-        amount: 1450,
+        amount: 1450.00,
         category: 'Casa',
         date: new Date().toISOString().split('T')[0],
-        description: 'Aluguel + Condomínio',
+        description: 'Aluguel do Apartamento',
         status: 'pago',
-        accountId: 'acc_main'
+        accountId: 'acc_main',
+        paidBy: 'conjunto'
     },
     {
         id: 'tx_init_3',
         type: 'saida',
-        amount: 380,
+        amount: 380.50,
         category: 'Alimentação',
         date: new Date().toISOString().split('T')[0],
-        description: 'Supermercado da Semana',
+        description: 'Compras Supermercado',
         status: 'pago',
-        accountId: 'acc_credit'
+        accountId: 'acc_credit',
+        paidBy: 'esposa'
     },
     {
         id: 'tx_init_4',
@@ -1043,6 +1047,220 @@ Estruture a resposta com tópicos claros usando emojis:
         }
     };
 
+    // =========================================================================
+    // 2. DIVISÃO & ACERTO DE CONTAS DO CASAL E GRUPO
+    // =========================================================================
+    const coupleSplitData = useMemo(() => {
+        const expenses = monthlyTransactions.filter(t => t.type === 'saida' && t.status === 'pago');
+
+        let totalMarido = 0;
+        let totalEsposa = 0;
+        let totalConjunto = 0;
+
+        expenses.forEach(t => {
+            const paidBy = t.paidBy || 'conjunto';
+            if (paidBy === 'marido') totalMarido += t.amount;
+            else if (paidBy === 'esposa') totalEsposa += t.amount;
+            else totalConjunto += t.amount;
+        });
+
+        const totalIndividual = totalMarido + totalEsposa;
+        const totalGeral = totalIndividual + totalConjunto;
+
+        const diff = totalMarido - totalEsposa;
+        let settlementText = '';
+        let whoOwesWho = 'balanced'; // 'esposa_owes_marido' | 'marido_owes_esposa' | 'balanced'
+        let settlementAmount = 0;
+
+        if (diff > 0.01) {
+            whoOwesWho = 'esposa_owes_marido';
+            settlementAmount = diff / 2;
+            settlementText = `A Esposa deve transferir ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(settlementAmount)} para Você para equilibrar os gastos 50/50.`;
+        } else if (diff < -0.01) {
+            whoOwesWho = 'marido_owes_esposa';
+            settlementAmount = Math.abs(diff) / 2;
+            settlementText = `Você deve transferir ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(settlementAmount)} para a Esposa para equilibrar os gastos 50/50.`;
+        } else {
+            settlementText = `Os gastos individuais estão perfeitamente equilibrados!`;
+        }
+
+        const pctMarido = totalIndividual > 0 ? (totalMarido / totalIndividual) * 100 : 50;
+        const pctEsposa = totalIndividual > 0 ? (totalEsposa / totalIndividual) * 100 : 50;
+
+        return {
+            totalMarido,
+            totalEsposa,
+            totalConjunto,
+            totalIndividual,
+            totalGeral,
+            pctMarido,
+            pctEsposa,
+            settlementAmount,
+            whoOwesWho,
+            settlementText,
+            expenses
+        };
+    }, [monthlyTransactions]);
+
+    const handleRegisterSettlement = () => {
+        if (coupleSplitData.settlementAmount <= 0) {
+            showToast("As contas já estão equilibradas!");
+            return;
+        }
+
+        const isMaridoReceiving = coupleSplitData.whoOwesWho === 'esposa_owes_marido';
+        const payer = isMaridoReceiving ? 'Esposa' : 'Você';
+        const receiver = isMaridoReceiving ? 'Você' : 'Esposa';
+
+        setFormData({
+            type: isMaridoReceiving ? 'entrada' : 'saida',
+            amount: coupleSplitData.settlementAmount.toFixed(2),
+            category: 'Outros',
+            date: new Date().toISOString().split('T')[0],
+            description: `Acerto de Contas do Casal (${payer} → ${receiver})`,
+            status: 'pago',
+            isRepeating: false,
+            accountId: 'acc_main',
+            paidBy: 'conjunto'
+        });
+        setIsFormOpen(true);
+    };
+
+    const handleCopySettlementSummary = () => {
+        const currentMonthName = currentDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+        const text = `📊 *Balanço do Casal - ${currentMonthName}*\n\n` +
+            `👦 *Você pagou:* ${formatCurrency(coupleSplitData.totalMarido)} (${coupleSplitData.pctMarido.toFixed(0)}%)\n` +
+            `👧 *Esposa pagou:* ${formatCurrency(coupleSplitData.totalEsposa)} (${coupleSplitData.pctEsposa.toFixed(0)}%)\n` +
+            `👥 *Conta Conjunta:* ${formatCurrency(coupleSplitData.totalConjunto)}\n` +
+            `💳 *Total Individual:* ${formatCurrency(coupleSplitData.totalIndividual)}\n\n` +
+            `⚖️ *Acerto 50/50:* ${coupleSplitData.settlementText}`;
+
+        navigator.clipboard.writeText(text);
+        showToast("Resumo do acerto copiado para o WhatsApp!");
+    };
+
+    // =========================================================================
+    // 1. LANÇAMENTO POR VOZ / ÁUDIO COM GEMINI IA
+    // =========================================================================
+    const handleStartVoiceRecording = () => {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            showToast("Reconhecimento de voz não suportado neste navegador. Tente no Chrome ou Safari.");
+            return;
+        }
+
+        try {
+            const recognition = new SpeechRecognition();
+            recognition.lang = 'pt-BR';
+            recognition.continuous = false;
+            recognition.interimResults = false;
+
+            setIsListeningVoice(true);
+            setVoiceTranscript('');
+            setIsVoiceModalOpen(true);
+
+            recognition.onresult = async (event) => {
+                const transcript = event.results[0][0].transcript;
+                setVoiceTranscript(transcript);
+                setIsListeningVoice(false);
+                await processVoiceExpenseWithAI(transcript);
+            };
+
+            recognition.onerror = (err) => {
+                console.error('Erro no reconhecimento de voz:', err);
+                setIsListeningVoice(false);
+                showToast("Não consegui ouvir com clareza. Tente falar novamente.");
+            };
+
+            recognition.onend = () => {
+                setIsListeningVoice(false);
+            };
+
+            recognition.start();
+        } catch (e) {
+            console.error(e);
+            setIsListeningVoice(false);
+            showToast("Erro ao acessar o microfone.");
+        }
+    };
+
+    const processVoiceExpenseWithAI = async (spokenText) => {
+        if (!geminiApiKey.trim()) {
+            showToast("Configure sua chave Gemini no FinBot primeiro.");
+            setIsApiKeyModalOpen(true);
+            return;
+        }
+
+        setIsProcessingVoice(true);
+        try {
+            const todayStr = new Date().toISOString().split('T')[0];
+            const prompt = `Analise a seguinte frase falada pelo usuário para registrar um lançamento financeiro:
+"${spokenText}"
+
+Categorias disponíveis:
+- Saída: Casa, Alimentação, Transporte, Lazer, Saúde, Educação, Assinaturas, Outros
+- Entrada: Salário, Freelance, Rendimentos, Vendas, Outros
+- Investimento: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobiliários
+
+Contas disponíveis:
+- acc_main (Conta Principal / Banco / Pix / Débito)
+- acc_wallet (Dinheiro Físico / Carteira)
+- acc_credit (Cartão de Crédito)
+
+Responda ESTRITAMENTE um objeto JSON no formato:
+{
+  "type": "saida" | "entrada" | "investimento",
+  "amount": number (ex: 45.50),
+  "category": string (uma das categorias acima),
+  "description": string (descrição concisa e limpa),
+  "date": "YYYY-MM-DD" (use ${todayStr} se não especificada outra data),
+  "paidBy": "marido" | "esposa" | "conjunto",
+  "accountId": "acc_main" | "acc_wallet" | "acc_credit"
+}`;
+
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: {
+                    temperature: 0.1,
+                    response_mime_type: "application/json"
+                }
+            };
+
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${geminiApiKey.trim()}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const json = await res.json();
+            const rawText = json.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!rawText) throw new Error("IA não retornou resposta");
+
+            const parsed = JSON.parse(rawText);
+
+            setFormData({
+                type: parsed.type || 'saida',
+                amount: parsed.amount ? String(parsed.amount) : '',
+                category: parsed.category || 'Outros',
+                date: parsed.date || todayStr,
+                description: parsed.description || spokenText,
+                status: 'pago',
+                isRepeating: false,
+                accountId: parsed.accountId || 'acc_main',
+                paidBy: parsed.paidBy || 'conjunto'
+            });
+
+            setIsVoiceModalOpen(false);
+            setIsFormOpen(true);
+            showToast(`Entendido por Voz: ${parsed.description || 'Lançamento'} (${formatCurrency(parsed.amount)})!`);
+        } catch (err) {
+            console.error(err);
+            showToast("Erro ao processar voz: " + (err.message || 'tente novamente'));
+        } finally {
+            setIsProcessingVoice(false);
+        }
+    };
+
     const formatCurrency = (value) => {
         return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
     };
@@ -1824,6 +2042,13 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
 
                                 <div className="flex items-center gap-2">
                                     <button
+                                        onClick={handleStartVoiceRecording}
+                                        className="p-2 bg-white/20 hover:bg-white/30 rounded-full text-white text-xs font-bold flex items-center justify-center transition backdrop-blur-md border border-white/20 animate-pulse"
+                                        title="Lançar por Voz com IA"
+                                    >
+                                        <Mic size={17} className="text-amber-300" />
+                                    </button>
+                                    <button
                                         onClick={() => setIsShoppingModalOpen(true)}
                                         className="relative p-2 bg-white/20 hover:bg-white/30 rounded-full text-white text-xs font-bold flex items-center justify-center transition backdrop-blur-md border border-white/20"
                                         title="Lista de Compras / Mercado"
@@ -1868,6 +2093,15 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
 
                             {/* Controles de Mês & Ações */}
                             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                                {/* Botão Falar com IA Desktop */}
+                                <button
+                                    onClick={handleStartVoiceRecording}
+                                    className="hidden sm:flex items-center gap-2 bg-white/15 hover:bg-white/25 backdrop-blur-md px-3.5 py-2.5 rounded-2xl text-xs font-extrabold border border-white/20 transition shadow-sm text-white"
+                                    title="Lançar por Comando de Voz"
+                                >
+                                    <Mic size={16} className="text-amber-300" /> Falar com IA
+                                </button>
+
                                 {/* Botão Lista de Mercado Desktop */}
                                 <button
                                     onClick={() => setIsShoppingModalOpen(true)}
@@ -2615,6 +2849,12 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                     >
                                         <Sparkles size={14} /> Projeção 6 Meses
                                     </button>
+                                    <button
+                                        onClick={() => setAnalysisView('divisao')}
+                                        className={`px-4 py-2.5 text-xs font-bold rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 ${analysisView === 'divisao' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
+                                    >
+                                        <Scale size={14} /> Divisão do Casal
+                                    </button>
                                 </div>
 
                                 {analysisView === 'mes' && (
@@ -2792,6 +3032,124 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                             <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                                                 Seus hábitos atuais de ganhos e gastos projetam um saldo de <strong className={futureProjectionData[5]?.isNegative ? 'text-rose-500' : 'text-emerald-500'}>{formatCurrency(futureProjectionData[5]?.balance || 0)}</strong> no 6º mês.
                                             </p>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* VISUALIZAÇÃO: DIVISÃO DO CASAL & GRUPO */}
+                                {analysisView === 'divisao' && (
+                                    <div className="space-y-6 animate-in fade-in duration-300">
+                                        {/* CARDS DE TOTAL POR PESSOA */}
+                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-5 text-white shadow-md">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <span className="text-xs font-black uppercase tracking-wider text-blue-200">👦 Pago por Você</span>
+                                                    <span className="text-xs font-bold bg-white/20 px-2 py-0.5 rounded-full">{coupleSplitData.pctMarido.toFixed(0)}%</span>
+                                                </div>
+                                                <h3 className="text-2xl font-black">{formatCurrency(coupleSplitData.totalMarido)}</h3>
+                                                <p className="text-[11px] text-blue-100 mt-1">Lançamentos individuais do marido</p>
+                                            </div>
+
+                                            <div className="bg-gradient-to-br from-rose-600 to-pink-700 rounded-3xl p-5 text-white shadow-md">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <span className="text-xs font-black uppercase tracking-wider text-rose-200">👧 Pago pela Esposa</span>
+                                                    <span className="text-xs font-bold bg-white/20 px-2 py-0.5 rounded-full">{coupleSplitData.pctEsposa.toFixed(0)}%</span>
+                                                </div>
+                                                <h3 className="text-2xl font-black">{formatCurrency(coupleSplitData.totalEsposa)}</h3>
+                                                <p className="text-[11px] text-rose-100 mt-1">Lançamentos individuais da esposa</p>
+                                            </div>
+
+                                            <div className="bg-gradient-to-br from-purple-600 to-indigo-800 rounded-3xl p-5 text-white shadow-md">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <span className="text-xs font-black uppercase tracking-wider text-purple-200">👥 Conta Conjunta</span>
+                                                    <span className="text-xs font-bold bg-white/20 px-2 py-0.5 rounded-full">Casal</span>
+                                                </div>
+                                                <h3 className="text-2xl font-black">{formatCurrency(coupleSplitData.totalConjunto)}</h3>
+                                                <p className="text-[11px] text-purple-100 mt-1">Gastos diretos do casal</p>
+                                            </div>
+                                        </div>
+
+                                        {/* CARD PRINCIPAL DE ACERTO 50/50 */}
+                                        <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-800 space-y-6">
+                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                                <div>
+                                                    <h3 className="text-base font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                                        <Scale size={20} className="text-indigo-600 dark:text-indigo-400" /> Balanço & Acerto de Contas (50% / 50%)
+                                                    </h3>
+                                                    <p className="text-xs text-slate-400 font-medium">Equilíbrio automático entre o que você e sua esposa pagaram individualmente</p>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        onClick={handleCopySettlementSummary}
+                                                        className="px-3.5 py-2 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 text-xs font-extrabold flex items-center gap-1.5 transition active:scale-95"
+                                                    >
+                                                        <Share2 size={14} /> Copiar Resumo
+                                                    </button>
+                                                    {coupleSplitData.settlementAmount > 0 && (
+                                                        <button
+                                                            onClick={handleRegisterSettlement}
+                                                            className="px-4 py-2 rounded-2xl bg-indigo-600 text-white hover:bg-indigo-700 text-xs font-black flex items-center gap-1.5 transition active:scale-95 shadow-md"
+                                                        >
+                                                            💸 Fazer Acerto
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Barra Visual de Proporção */}
+                                            <div>
+                                                <div className="flex justify-between text-xs font-black mb-2">
+                                                    <span className="text-blue-600 dark:text-blue-400 flex items-center gap-1">👦 Você: {coupleSplitData.pctMarido.toFixed(1)}%</span>
+                                                    <span className="text-slate-400 font-bold">Meta 50/50</span>
+                                                    <span className="text-rose-600 dark:text-rose-400 flex items-center gap-1">👧 Esposa: {coupleSplitData.pctEsposa.toFixed(1)}%</span>
+                                                </div>
+                                                <div className="h-4 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex">
+                                                    <div style={{ width: `${coupleSplitData.pctMarido}%` }} className="bg-blue-600 h-full transition-all duration-700"></div>
+                                                    <div style={{ width: `${coupleSplitData.pctEsposa}%` }} className="bg-rose-500 h-full transition-all duration-700"></div>
+                                                </div>
+                                            </div>
+
+                                            {/* Mensagem de Veredito / Acerto */}
+                                            <div className={`p-4 rounded-2xl border ${coupleSplitData.whoOwesWho === 'balanced' ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-200' : 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800/60 text-indigo-900 dark:text-indigo-200'} flex items-start gap-3`}>
+                                                <div className="w-8 h-8 rounded-xl bg-white/60 dark:bg-slate-800/60 flex items-center justify-center shrink-0">
+                                                    <Scale size={18} className="text-indigo-600 dark:text-indigo-400" />
+                                                </div>
+                                                <div>
+                                                    <h4 className="text-xs font-black uppercase tracking-wider mb-0.5">Diagnóstico do Acerto</h4>
+                                                    <p className="text-sm font-bold">{coupleSplitData.settlementText}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* DETALHAMENTO DE DESPESAS POR QUEM PAGOU */}
+                                        <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-800">
+                                            <h3 className="text-base font-black text-slate-800 dark:text-white mb-4">Despesas deste Mês por Quem Pagou</h3>
+                                            <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1">
+                                                {coupleSplitData.expenses.length === 0 ? (
+                                                    <p className="text-center py-6 text-slate-400 text-xs font-medium">Nenhuma despesa paga registrada neste mês.</p>
+                                                ) : (
+                                                    coupleSplitData.expenses.map(t => (
+                                                        <div key={t.id} className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800/60">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="p-2.5 bg-white dark:bg-slate-800 rounded-xl text-slate-500 shadow-sm">
+                                                                    {getCategoryIcon(t.category)}
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-xs font-black text-slate-800 dark:text-white">{t.description || t.category}</p>
+                                                                    <div className="flex items-center gap-2 text-[10px] text-slate-400 font-semibold mt-0.5">
+                                                                        <span>{new Date(t.date + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+                                                                        <span>•</span>
+                                                                        <span className={`px-1.5 py-0.2 rounded-md font-bold ${t.paidBy === 'marido' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/80 dark:text-blue-300' : t.paidBy === 'esposa' ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-950/80 dark:text-purple-300'}`}>
+                                                                            {t.paidBy === 'marido' ? '👦 Você' : t.paidBy === 'esposa' ? '👧 Esposa' : '👥 Conjunto'}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <span className="text-xs font-black text-rose-500">-{formatCurrency(t.amount)}</span>
+                                                        </div>
+                                                    ))
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 )}
@@ -3063,13 +3421,23 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                 </h2>
                                 <div className="flex items-center gap-2">
                                     {!editingId && (
-                                        <label
-                                            className="p-2 bg-purple-50 dark:bg-purple-950/50 hover:bg-purple-100 text-purple-600 dark:text-purple-400 rounded-2xl cursor-pointer transition flex items-center justify-center border border-purple-200 dark:border-purple-800"
-                                            title="Escanear Recibo com Foto"
-                                        >
-                                            {isScanningReceipt ? <Loader2 className="animate-spin" size={20} /> : <Camera size={20} />}
-                                            <input type="file" accept="image/*" className="hidden" onChange={handleReceiptScan} disabled={isScanningReceipt} />
-                                        </label>
+                                        <>
+                                            <button
+                                                type="button"
+                                                onClick={handleStartVoiceRecording}
+                                                className="p-2 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 text-amber-600 dark:text-amber-400 rounded-2xl transition flex items-center justify-center border border-amber-200 dark:border-amber-800"
+                                                title="Preencher por Voz com FinBot IA"
+                                            >
+                                                <Mic size={20} />
+                                            </button>
+                                            <label
+                                                className="p-2 bg-purple-50 dark:bg-purple-950/50 hover:bg-purple-100 text-purple-600 dark:text-purple-400 rounded-2xl cursor-pointer transition flex items-center justify-center border border-purple-200 dark:border-purple-800"
+                                                title="Escanear Recibo com Foto"
+                                            >
+                                                {isScanningReceipt ? <Loader2 className="animate-spin" size={20} /> : <Camera size={20} />}
+                                                <input type="file" accept="image/*" className="hidden" onChange={handleReceiptScan} disabled={isScanningReceipt} />
+                                            </label>
+                                        </>
                                     )}
                                     <button onClick={() => setIsFormOpen(false)} className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 dark:text-slate-300 rounded-2xl transition">
                                         <X size={20} />
@@ -4131,6 +4499,86 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                     className="px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-black py-3 rounded-2xl text-xs transition flex items-center justify-center gap-1.5"
                                 >
                                     <RefreshCw size={14} className={isGeneratingDiagnosis ? 'animate-spin' : ''} /> Recalcular
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ========================================================================= */}
+                {/* MODAL DE COMANDO DE VOZ / ÁUDIO COM GEMINI IA */}
+                {/* ========================================================================= */}
+                {isVoiceModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+                        <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-md" onClick={() => { setIsListeningVoice(false); setIsVoiceModalOpen(false); }}></div>
+                        <div className="relative bg-white dark:bg-slate-900 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl text-center space-y-6 animate-in slide-in-from-bottom-full duration-300">
+                            <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-2">
+                                    <Sparkles size={18} className="text-amber-500 animate-pulse" />
+                                    <span className="text-xs font-black uppercase tracking-wider text-slate-400">FinBot Voz IA</span>
+                                </div>
+                                <button
+                                    onClick={() => { setIsListeningVoice(false); setIsVoiceModalOpen(false); }}
+                                    className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 rounded-2xl transition"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+
+                            {/* Ícone Pulsante de Microfone */}
+                            <div className="py-4">
+                                <div className="relative inline-flex items-center justify-center">
+                                    {isListeningVoice && (
+                                        <>
+                                            <span className="absolute w-28 h-28 rounded-full bg-amber-400/20 animate-ping"></span>
+                                            <span className="absolute w-20 h-20 rounded-full bg-amber-500/30 animate-pulse"></span>
+                                        </>
+                                    )}
+                                    {isProcessingVoice && (
+                                        <span className="absolute w-24 h-24 rounded-full bg-blue-500/20 animate-spin border-2 border-dashed border-blue-500"></span>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={isListeningVoice ? () => setIsListeningVoice(false) : handleStartVoiceRecording}
+                                        className={`w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl shadow-xl transition-all relative z-10 ${isProcessingVoice ? 'bg-blue-600' : isListeningVoice ? 'bg-amber-500 scale-110' : 'bg-slate-700 hover:bg-slate-600'}`}
+                                    >
+                                        {isProcessingVoice ? (
+                                            <Loader2 size={32} className="animate-spin" />
+                                        ) : isListeningVoice ? (
+                                            <Mic size={34} className="animate-bounce" />
+                                        ) : (
+                                            <MicOff size={32} />
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Texto de Status & Transcrição */}
+                            <div>
+                                <h3 className="text-lg font-black text-slate-800 dark:text-white mb-1.5">
+                                    {isProcessingVoice
+                                        ? "Processando com Inteligência Artificial..."
+                                        : isListeningVoice
+                                        ? "Estou ouvindo... Pode falar!"
+                                        : "Toque no microfone para falar"}
+                                </h3>
+                                <p className="text-xs text-slate-400 px-4">
+                                    {isListeningVoice
+                                        ? 'Ex: "Gastei 45 reais na padaria no cartão pago por mim"'
+                                        : voiceTranscript
+                                        ? `"${voiceTranscript}"`
+                                        : "Fale o valor, onde gastou, a conta e quem pagou."}
+                                </p>
+                            </div>
+
+                            {/* Botão de Cancelar / Tentar Novamente */}
+                            <div className="pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => { setIsListeningVoice(false); setIsVoiceModalOpen(false); }}
+                                    className="w-full py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-xs rounded-2xl hover:bg-slate-200 transition"
+                                >
+                                    Cancelar
                                 </button>
                             </div>
                         </div>
