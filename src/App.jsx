@@ -4920,7 +4920,7 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                                     </div>
                                                                 </div>
 
-                                                                {/* Ações Rápidas & Amortização */}
+                                                                {/* Ações & Amortização */}
                                                                 <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex gap-2">
                                                                     <button
                                                                         onClick={() => {
@@ -4929,17 +4929,9 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                                             setIsAmortizationModalOpen(true);
                                                                         }}
                                                                         disabled={isFullyPaid}
-                                                                        className="flex-1 py-2.5 px-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 text-white text-xs font-black rounded-2xl transition flex items-center justify-center gap-1.5 shadow-sm active:scale-95"
+                                                                        className="w-full py-2.5 px-4 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 text-white text-xs font-black rounded-2xl transition flex items-center justify-center gap-2 shadow-sm active:scale-95"
                                                                     >
-                                                                        <Zap size={14} className="text-yellow-300" /> Simular Amortização
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => handlePrepayInstallment(fin.id, 1)}
-                                                                        disabled={isFullyPaid}
-                                                                        className="py-2.5 px-3.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50 text-slate-700 dark:text-slate-200 text-xs font-black rounded-2xl transition flex items-center justify-center gap-1 active:scale-95"
-                                                                        title="Avançar 1 parcela como paga"
-                                                                    >
-                                                                        <Plus size={14} /> +1 Parcela
+                                                                        <Zap size={15} className="text-yellow-300" /> Simular Amortização & Economia
                                                                     </button>
                                                                 </div>
                                                             </div>
