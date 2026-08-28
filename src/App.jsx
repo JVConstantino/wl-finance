@@ -10,7 +10,7 @@ import {
     Wifi, History, Sparkles, Activity, ArrowRightLeft, Key, Check, Info,
     Download, ShieldCheck, Layers, ChevronDown, Database, LogIn, LogOut, RefreshCw,
     Lock, Unlock, Shield, Heart, Copy, ShoppingCart, PiggyBank, Bell, CheckSquare, Square, Flame,
-    Mic, MicOff, Scale, Share2
+    Mic, MicOff, Scale, Share2, Trophy, Award, Medal, Printer, FileDown, Star
 } from 'lucide-react';
 import {
     getSupabase, getSupabaseConfig, saveSupabaseConfig, clearSupabaseConfig,
@@ -265,7 +265,16 @@ export default function App() {
     const [aiDiagnosisText, setAiDiagnosisText] = useState('');
     const [isGeneratingDiagnosis, setIsGeneratingDiagnosis] = useState(false);
 
-    // 11. Estados Pull-to-Refresh
+    // 13. Comando de Voz / Áudio com IA
+    const [isListeningVoice, setIsListeningVoice] = useState(false);
+    const [voiceTranscript, setVoiceTranscript] = useState('');
+    const [isProcessingVoice, setIsProcessingVoice] = useState(false);
+    const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
+
+    // 14. Relatório Executivo para Impressão / PDF
+    const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+
+    // 15. Estados Pull-to-Refresh
     const [pullY, setPullY] = useState(0);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const touchStartRef = useRef(0);
@@ -1261,6 +1270,144 @@ Responda ESTRITAMENTE um objeto JSON no formato:
         }
     };
 
+    // =========================================================================
+    // 3. CONQUISTAS & MEDALHAS DO CASAL (GAMIFICAÇÃO FINANCEIRA)
+    // =========================================================================
+    const coupleAchievements = useMemo(() => {
+        const totalTxs = transactions.length;
+        const hasGoals = savingsGoals.length > 0;
+        const totalSavedInGoals = savingsGoals.reduce((acc, g) => acc + (g.currentAmount || 0), 0);
+        const totalInvestedOverall = transactions.filter(t => t.type === 'investimento').reduce((acc, t) => acc + t.amount, 0);
+        const totalSavingsPlusInvestments = totalSavedInGoals + totalInvestedOverall;
+
+        const overdueBillsCount = monthlyTransactions.filter(t => t.type === 'saida' && t.status === 'pendente' && new Date(t.date + 'T12:00:00') < new Date()).length;
+        const hasCompletedShopping = shoppingItems.some(i => i.completed);
+
+        const hasHusbandExpense = monthlyTransactions.some(t => t.paidBy === 'marido');
+        const hasWifeExpense = monthlyTransactions.some(t => t.paidBy === 'esposa');
+        const hasCoupleSync = hasHusbandExpense && hasWifeExpense;
+
+        const currentIncome = monthlySummary.receitas;
+        const currentExpense = monthlySummary.despesas;
+        const currentSavingsRate = currentIncome > 0 ? Math.max(0, ((currentIncome - currentExpense) / currentIncome) * 100) : 0;
+        const isSuperSaver = currentSavingsRate >= 20;
+
+        const hasInvestedThisMonth = monthlySummary.investimentos > 0;
+        const isPositiveBalance = monthlySummary.saldoLiquido > 0;
+
+        const badges = [
+            {
+                id: 'b1',
+                title: 'Primeiro Passo',
+                desc: 'Registrar pelo menos 5 lançamentos no app.',
+                icon: '🚀',
+                color: 'from-blue-500 to-indigo-600',
+                unlocked: totalTxs >= 5,
+                progress: Math.min(100, Math.round((totalTxs / 5) * 100)),
+                progressLabel: `${Math.min(totalTxs, 5)}/5 lançamentos`
+            },
+            {
+                id: 'b2',
+                title: 'Sonhadores Focados',
+                desc: 'Criar o primeiro Cofrinho do Casal.',
+                icon: '🎯',
+                color: 'from-amber-500 to-orange-600',
+                unlocked: hasGoals,
+                progress: hasGoals ? 100 : 0,
+                progressLabel: hasGoals ? '1 cofrinho criado' : '0/1 cofrinho'
+            },
+            {
+                id: 'b3',
+                title: 'Blindagem Financeira',
+                desc: 'Acumular mais de R$ 3.000 em cofrinhos ou investimentos.',
+                icon: '🛡️',
+                color: 'from-emerald-500 to-teal-700',
+                unlocked: totalSavingsPlusInvestments >= 3000,
+                progress: Math.min(100, Math.round((totalSavingsPlusInvestments / 3000) * 100)),
+                progressLabel: `${formatCurrency(totalSavingsPlusInvestments)} / ${formatCurrency(3000)}`
+            },
+            {
+                id: 'b4',
+                title: 'Pontualidade Anti-Juros',
+                desc: 'Sem nenhuma conta pendente em atraso neste mês.',
+                icon: '⚡',
+                color: 'from-yellow-400 to-amber-600',
+                unlocked: overdueBillsCount === 0 && monthlyTransactions.length > 0,
+                progress: overdueBillsCount === 0 ? 100 : 0,
+                progressLabel: overdueBillsCount === 0 ? '100% em dia' : `${overdueBillsCount} conta(s) em atraso`
+            },
+            {
+                id: 'b5',
+                title: 'Mestres do Mercado',
+                desc: 'Concluir compras na lista compartilhada.',
+                icon: '🛒',
+                color: 'from-purple-500 to-pink-600',
+                unlocked: hasCompletedShopping,
+                progress: hasCompletedShopping ? 100 : 0,
+                progressLabel: hasCompletedShopping ? 'Itens comprados' : 'Nenhum item marcado'
+            },
+            {
+                id: 'b6',
+                title: 'Sintonia do Casal',
+                desc: 'Marido e Esposa com lançamentos ativos no mesmo mês.',
+                icon: '💖',
+                color: 'from-rose-500 to-pink-600',
+                unlocked: hasCoupleSync,
+                progress: (hasHusbandExpense ? 50 : 0) + (hasWifeExpense ? 50 : 0),
+                progressLabel: hasCoupleSync ? 'Os dois lançando juntos!' : hasHusbandExpense ? 'Apenas Marido lançou' : hasWifeExpense ? 'Apenas Esposa lançou' : 'Nenhum lançamento'
+            },
+            {
+                id: 'b7',
+                title: 'Super Poupadores',
+                desc: 'Economizar mais de 20% da renda no mês atual.',
+                icon: '💰',
+                color: 'from-green-500 to-emerald-700',
+                unlocked: isSuperSaver,
+                progress: Math.min(100, Math.round((currentSavingsRate / 20) * 100)),
+                progressLabel: `${currentSavingsRate.toFixed(1)}% economizado (meta: 20%)`
+            },
+            {
+                id: 'b8',
+                title: 'Investidores Inteligentes',
+                desc: 'Fazer aportes em investimentos neste mês.',
+                icon: '📈',
+                color: 'from-indigo-600 to-blue-700',
+                unlocked: hasInvestedThisMonth,
+                progress: hasInvestedThisMonth ? 100 : 0,
+                progressLabel: hasInvestedThisMonth ? `Aportado: ${formatCurrency(monthlySummary.investimentos)}` : 'R$ 0 aportados'
+            },
+            {
+                id: 'b9',
+                title: 'Casal no Azul',
+                desc: 'Fechar o mês com saldo líquido positivo.',
+                icon: '👑',
+                color: 'from-cyan-500 to-blue-600',
+                unlocked: isPositiveBalance,
+                progress: isPositiveBalance ? 100 : 0,
+                progressLabel: isPositiveBalance ? `Saldo: +${formatCurrency(monthlySummary.saldoLiquido)}` : 'Saldo negativo'
+            }
+        ];
+
+        const unlockedCount = badges.filter(b => b.unlocked).length;
+        const totalBadges = badges.length;
+        const levelScore = Math.min(10, Math.max(1, Math.floor((unlockedCount / totalBadges) * 10)));
+
+        let levelTitle = 'Iniciantes';
+        if (unlockedCount >= 8) levelTitle = 'Casal Mestre das Finanças 👑';
+        else if (unlockedCount >= 6) levelTitle = 'Casal Investidor & Blindado 💎';
+        else if (unlockedCount >= 4) levelTitle = 'Casal Organizado & Focado 🌟';
+        else if (unlockedCount >= 2) levelTitle = 'Casal em Evolução 🚀';
+
+        return {
+            badges,
+            unlockedCount,
+            totalBadges,
+            levelScore,
+            levelTitle,
+            percentComplete: Math.round((unlockedCount / totalBadges) * 100)
+        };
+    }, [transactions, savingsGoals, shoppingItems, monthlyTransactions, monthlySummary]);
+
     const formatCurrency = (value) => {
         return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
     };
@@ -2102,6 +2249,15 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                     <Mic size={16} className="text-amber-300" /> Falar com IA
                                 </button>
 
+                                {/* Botão Relatório PDF Desktop */}
+                                <button
+                                    onClick={() => setIsReportModalOpen(true)}
+                                    className="hidden md:flex items-center gap-2 bg-white/15 hover:bg-white/25 backdrop-blur-md px-3.5 py-2.5 rounded-2xl text-xs font-extrabold border border-white/20 transition shadow-sm text-white"
+                                    title="Relatório Executivo PDF / Impressão"
+                                >
+                                    <FileDown size={16} className="text-emerald-300" /> Relatório PDF
+                                </button>
+
                                 {/* Botão Lista de Mercado Desktop */}
                                 <button
                                     onClick={() => setIsShoppingModalOpen(true)}
@@ -2855,6 +3011,18 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                     >
                                         <Scale size={14} /> Divisão do Casal
                                     </button>
+                                    <button
+                                        onClick={() => setAnalysisView('conquistas')}
+                                        className={`px-4 py-2.5 text-xs font-bold rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 ${analysisView === 'conquistas' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
+                                    >
+                                        <Trophy size={14} className="text-amber-400" /> Conquistas ({coupleAchievements.unlockedCount}/{coupleAchievements.totalBadges})
+                                    </button>
+                                    <button
+                                        onClick={() => setIsReportModalOpen(true)}
+                                        className="px-4 py-2.5 text-xs font-black rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-md hover:from-emerald-700 hover:to-teal-800 active:scale-95 ml-auto"
+                                    >
+                                        <FileDown size={14} /> Relatório PDF / Imprimir
+                                    </button>
                                 </div>
 
                                 {analysisView === 'mes' && (
@@ -3150,6 +3318,83 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                                     ))
                                                 )}
                                             </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* VISUALIZAÇÃO: CONQUISTAS & MEDALHAS DO CASAL */}
+                                {analysisView === 'conquistas' && (
+                                    <div className="space-y-6 animate-in fade-in duration-300">
+                                        {/* BANNER DE NÍVEL & SCORE DO CASAL */}
+                                        <div className="bg-gradient-to-r from-amber-500 via-orange-600 to-rose-600 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
+                                            <div className="absolute -right-6 -bottom-6 opacity-15 pointer-events-none">
+                                                <Trophy size={180} />
+                                            </div>
+                                            <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="w-16 h-16 rounded-3xl bg-white/20 backdrop-blur-md flex items-center justify-center text-3xl shadow-inner shrink-0">
+                                                        🏆
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-xs font-extrabold uppercase tracking-wider text-amber-200 bg-white/15 px-2.5 py-0.5 rounded-full">
+                                                            Gamificação do Casal
+                                                        </span>
+                                                        <h2 className="text-2xl sm:text-3xl font-black mt-1 tracking-tight">{coupleAchievements.levelTitle}</h2>
+                                                        <p className="text-xs text-amber-100 font-medium mt-0.5">
+                                                            {coupleAchievements.unlockedCount} de {coupleAchievements.totalBadges} conquistas financeiras desbloqueadas ({coupleAchievements.percentComplete}%)
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                <div className="w-full sm:w-56 bg-black/20 backdrop-blur-md p-3.5 rounded-2xl border border-white/20 shrink-0">
+                                                    <div className="flex justify-between text-xs font-black mb-1.5">
+                                                        <span>Progresso Geral</span>
+                                                        <span>{coupleAchievements.percentComplete}%</span>
+                                                    </div>
+                                                    <div className="w-full bg-black/30 h-2.5 rounded-full overflow-hidden">
+                                                        <div className="bg-gradient-to-r from-amber-300 to-yellow-200 h-full rounded-full transition-all duration-700" style={{ width: `${coupleAchievements.percentComplete}%` }}></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* GRADE DE CONQUISTAS E MEDALHAS */}
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                            {coupleAchievements.badges.map(badge => (
+                                                <div
+                                                    key={badge.id}
+                                                    className={`rounded-3xl p-5 border transition-all duration-300 relative overflow-hidden flex flex-col justify-between ${
+                                                        badge.unlocked
+                                                            ? 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md'
+                                                            : 'bg-slate-50 dark:bg-slate-950/60 border-slate-200/60 dark:border-slate-800/40 opacity-75'
+                                                    }`}
+                                                >
+                                                    <div>
+                                                        <div className="flex items-center justify-between mb-3">
+                                                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-sm ${badge.unlocked ? `bg-gradient-to-br ${badge.color} text-white shadow-md` : 'bg-slate-200 dark:bg-slate-800 text-slate-400 grayscale'}`}>
+                                                                {badge.icon}
+                                                            </div>
+                                                            <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider flex items-center gap-1 ${badge.unlocked ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300' : 'bg-slate-200 dark:bg-slate-800 text-slate-500'}`}>
+                                                                {badge.unlocked ? <><CheckCircle2 size={12} /> Conquistada</> : <><Lock size={12} /> Bloqueada</>}
+                                                            </span>
+                                                        </div>
+
+                                                        <h3 className={`text-base font-black ${badge.unlocked ? 'text-slate-800 dark:text-white' : 'text-slate-600 dark:text-slate-400'}`}>{badge.title}</h3>
+                                                        <p className="text-xs text-slate-400 font-medium mt-1 leading-relaxed">{badge.desc}</p>
+                                                    </div>
+
+                                                    {/* Barra de Progresso da Conquista */}
+                                                    <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80">
+                                                        <div className="flex justify-between text-[11px] font-bold text-slate-400 mb-1">
+                                                            <span>Status</span>
+                                                            <span className={badge.unlocked ? 'text-emerald-600 dark:text-emerald-400 font-extrabold' : ''}>{badge.progressLabel}</span>
+                                                        </div>
+                                                        <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                                                            <div className={`h-full rounded-full transition-all duration-500 ${badge.unlocked ? 'bg-emerald-500' : 'bg-slate-400 dark:bg-slate-600'}`} style={{ width: `${badge.progress}%` }}></div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </div>
                                     </div>
                                 )}
@@ -4500,6 +4745,189 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                 >
                                     <RefreshCw size={14} className={isGeneratingDiagnosis ? 'animate-spin' : ''} /> Recalcular
                                 </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ========================================================================= */}
+                {/* MODAL DE RELATÓRIO EXECUTIVO PARA IMPRESSÃO / PDF */}
+                {/* ========================================================================= */}
+                {isReportModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-slate-900/80 backdrop-blur-md overflow-y-auto">
+                        <div className="relative bg-white text-slate-900 w-full max-w-3xl rounded-none sm:rounded-3xl p-6 sm:p-10 shadow-2xl my-auto animate-in zoom-in-95 duration-200">
+                            {/* Barra de Ações do Relatório (Oculta na impressão) */}
+                            <div className="no-print flex items-center justify-between pb-6 mb-6 border-b border-slate-100">
+                                <div className="flex items-center gap-2">
+                                    <FileDown className="text-emerald-600" size={22} />
+                                    <span className="text-sm font-black text-slate-800">Visualização de Impressão & PDF</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => {
+                                            const reportText = `📄 *RELATÓRIO FINANCEIRO DO CASAL*\n` +
+                                                `📅 *Período:* ${currentDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}\n\n` +
+                                                `🟢 *Receitas:* ${formatCurrency(monthlySummary.receitas)}\n` +
+                                                `🔴 *Despesas:* ${formatCurrency(monthlySummary.despesas)}\n` +
+                                                `🔵 *Investimentos:* ${formatCurrency(monthlySummary.investimentos)}\n` +
+                                                `💰 *Saldo Líquido:* ${formatCurrency(monthlySummary.saldoLiquido)}\n` +
+                                                `📈 *Taxa de Poupança:* ${monthlySummary.taxaPoupanca.toFixed(1)}%\n\n` +
+                                                `⚖️ *Balanço do Casal:*\n` +
+                                                `👦 Você: ${formatCurrency(coupleSplitData.totalMarido)} (${coupleSplitData.pctMarido.toFixed(0)}%)\n` +
+                                                `👧 Esposa: ${formatCurrency(coupleSplitData.totalEsposa)} (${coupleSplitData.pctEsposa.toFixed(0)}%)\n` +
+                                                `👥 Casal: ${formatCurrency(coupleSplitData.totalConjunto)}\n` +
+                                                `💡 ${coupleSplitData.settlementText}`;
+                                            navigator.clipboard.writeText(reportText);
+                                            showToast("Resumo copiado para o WhatsApp!");
+                                        }}
+                                        className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1.5"
+                                    >
+                                        <Copy size={14} /> Copiar
+                                    </button>
+                                    <button
+                                        onClick={() => window.print()}
+                                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black transition flex items-center gap-1.5 shadow-md shadow-emerald-600/20 active:scale-95"
+                                    >
+                                        <Printer size={14} /> Imprimir / Salvar PDF
+                                    </button>
+                                    <button
+                                        onClick={() => setIsReportModalOpen(false)}
+                                        className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-xl transition"
+                                    >
+                                        <X size={18} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* DOCUMENTO DO RELATÓRIO EXECUTIVO */}
+                            <div className="space-y-6">
+                                {/* Cabeçalho do Relatório */}
+                                <div className="flex justify-between items-start border-b-2 border-slate-900 pb-4">
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-sm">
+                                                FP
+                                            </div>
+                                            <h1 className="text-2xl font-black text-slate-900 tracking-tight">FinançasPro</h1>
+                                        </div>
+                                        <p className="text-xs text-slate-500 font-medium mt-0.5">Relatório Financeiro Executivo do Casal</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <span className="text-xs uppercase font-extrabold text-slate-400">Mês de Referência</span>
+                                        <h2 className="text-lg font-black text-slate-900 capitalize">
+                                            {currentDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}
+                                        </h2>
+                                        <p className="text-[10px] text-slate-400">Emitido em: {new Date().toLocaleDateString('pt-BR')}</p>
+                                    </div>
+                                </div>
+
+                                {/* Resumo de Indicadores Principais */}
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                    <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
+                                        <span className="text-[10px] font-extrabold uppercase text-slate-400">Receitas</span>
+                                        <p className="text-base font-black text-emerald-600 mt-0.5">{formatCurrency(monthlySummary.receitas)}</p>
+                                    </div>
+                                    <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
+                                        <span className="text-[10px] font-extrabold uppercase text-slate-400">Despesas</span>
+                                        <p className="text-base font-black text-rose-600 mt-0.5">{formatCurrency(monthlySummary.despesas)}</p>
+                                    </div>
+                                    <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
+                                        <span className="text-[10px] font-extrabold uppercase text-slate-400">Investimentos</span>
+                                        <p className="text-base font-black text-indigo-600 mt-0.5">{formatCurrency(monthlySummary.investimentos)}</p>
+                                    </div>
+                                    <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
+                                        <span className="text-[10px] font-extrabold uppercase text-slate-400">Saldo Líquido</span>
+                                        <p className={`text-base font-black mt-0.5 ${monthlySummary.saldoLiquido >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>
+                                            {formatCurrency(monthlySummary.saldoLiquido)}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Bloco 1: Balanço e Acerto do Casal */}
+                                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                                        <Scale size={14} className="text-indigo-600" /> Balanço do Casal (Divisão 50/50)
+                                    </h3>
+                                    <div className="grid grid-cols-3 gap-2 text-xs">
+                                        <div>
+                                            <span className="text-slate-500">👦 Você:</span> <strong className="text-slate-900">{formatCurrency(coupleSplitData.totalMarido)} ({coupleSplitData.pctMarido.toFixed(0)}%)</strong>
+                                        </div>
+                                        <div>
+                                            <span className="text-slate-500">👧 Esposa:</span> <strong className="text-slate-900">{formatCurrency(coupleSplitData.totalEsposa)} ({coupleSplitData.pctEsposa.toFixed(0)}%)</strong>
+                                        </div>
+                                        <div>
+                                            <span className="text-slate-500">👥 Casal:</span> <strong className="text-slate-900">{formatCurrency(coupleSplitData.totalConjunto)}</strong>
+                                        </div>
+                                    </div>
+                                    <div className="p-2.5 bg-white rounded-xl border border-slate-200 text-xs font-bold text-slate-800 mt-1">
+                                        💡 {coupleSplitData.settlementText}
+                                    </div>
+                                </div>
+
+                                {/* Bloco 2: Maiores Despesas por Categoria */}
+                                <div>
+                                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 mb-2.5">
+                                        Despesas por Categoria
+                                    </h3>
+                                    <table className="w-full text-xs">
+                                        <thead>
+                                            <tr className="border-b border-slate-200 text-slate-400 font-bold text-left">
+                                                <th className="pb-1.5">Categoria</th>
+                                                <th className="pb-1.5 text-right">% do Total</th>
+                                                <th className="pb-1.5 text-right">Valor</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {analysisData.data.map(item => (
+                                                <tr key={item.name}>
+                                                    <td className="py-2 font-bold text-slate-800">{item.name}</td>
+                                                    <td className="py-2 text-right font-medium text-slate-500">{item.percentage.toFixed(1)}%</td>
+                                                    <td className="py-2 text-right font-black text-slate-900">{formatCurrency(item.amount)}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {/* Bloco 3: Cofrinhos e Metas Ativas */}
+                                {savingsGoals.length > 0 && (
+                                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                                        <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 mb-2 flex items-center gap-1.5">
+                                            <PiggyBank size={14} className="text-amber-500" /> Progresso dos Cofrinhos & Sonhos
+                                        </h3>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                                            {savingsGoals.map(goal => {
+                                                const pct = Math.min(100, Math.round(((goal.currentAmount || 0) / (goal.targetAmount || 1)) * 100));
+                                                return (
+                                                    <div key={goal.id} className="p-2.5 bg-white rounded-xl border border-slate-200">
+                                                        <div className="flex justify-between font-bold text-slate-800 mb-1">
+                                                            <span>{goal.icon} {goal.title}</span>
+                                                            <span>{pct}%</span>
+                                                        </div>
+                                                        <div className="flex justify-between text-[10px] text-slate-500">
+                                                            <span>{formatCurrency(goal.currentAmount)}</span>
+                                                            <span>Meta: {formatCurrency(goal.targetAmount)}</span>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Bloco 4: Conquistas Desbloqueadas */}
+                                <div className="p-3 bg-amber-50/60 rounded-2xl border border-amber-200/60 flex items-center justify-between text-xs">
+                                    <div className="flex items-center gap-2">
+                                        <Trophy size={16} className="text-amber-600" />
+                                        <span className="font-extrabold text-amber-900">Nível do Casal: {coupleAchievements.levelTitle}</span>
+                                    </div>
+                                    <span className="font-bold text-amber-800">{coupleAchievements.unlockedCount}/{coupleAchievements.totalBadges} Conquistas</span>
+                                </div>
+
+                                {/* Rodapé do Relatório */}
+                                <div className="pt-4 border-t border-slate-200 text-center text-[10px] text-slate-400 font-medium">
+                                    FinançasPro • Planejamento Patrimonial e Gestão Financeira para Casais Inteligentes
+                                </div>
                             </div>
                         </div>
                     </div>

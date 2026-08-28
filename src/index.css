@@ -27,3 +27,25 @@
 .pt-safe {
   padding-top: env(safe-area-inset-top, 0rem);
 }
+
+/* Otimização de Impressão e PDF */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  .page-break {
+    page-break-before: always;
+  }
+}
+@media screen {
+  .print-only {
+    display: none !important;
+  }
+}
