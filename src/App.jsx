@@ -444,7 +444,9 @@ export default function App() {
     const [financings, setFinancings] = useState(() => safeGet('fp_financings', defaultSampleFinancings));
     const [isFinancingModalOpen, setIsFinancingModalOpen] = useState(false);
     const [isContractAnalysisModalOpen, setIsContractAnalysisModalOpen] = useState(false);
-    const [contractImageBase64, setContractImageBase64] = useState(null);
+    const [contractFileBase64, setContractFileBase64] = useState(null);
+    const [contractFileMimeType, setContractFileMimeType] = useState('application/pdf');
+    const [contractFileName, setContractFileName] = useState('');
     const [contractTextInput, setContractTextInput] = useState('');
     const [isAnalyzingContract, setIsAnalyzingContract] = useState(false);
     const [contractAnalysisResult, setContractAnalysisResult] = useState(null);
@@ -1585,8 +1587,8 @@ Mensagem do casal:
     };
 
     const handleAnalyzeContractWithAI = async () => {
-        if (!contractTextInput.trim() && !contractImageBase64) {
-            showToast("Cole o texto do contrato ou envie uma foto/imagem.");
+        if (!contractTextInput.trim() && !contractFileBase64) {
+            showToast("Envie um PDF, foto do contrato ou cole o texto.");
             return;
         }
         if (!geminiApiKey.trim()) {
@@ -1599,8 +1601,8 @@ Mensagem do casal:
         setContractAnalysisResult(null);
 
         try {
-            const promptInstruction = `Você é um perito financeiro especialista em contratos bancários e financiamentos de veículos e imóveis.
-Analise os dados deste contrato ou extrato e retorne APENAS um bloco JSON válido com a seguinte estrutura:
+            const promptInstruction = `Você é um perito financeiro especialista em contratos bancários, cédulas de crédito e financiamentos de veículos e imóveis.
+Analise detalhadamente o documento anexado (PDF ou imagem) ou o texto deste contrato e retorne APENAS um bloco JSON válido com a seguinte estrutura:
 \`\`\`json
 {
   "institution": "Nome do Banco ou Financeira",
@@ -1623,17 +1625,18 @@ Analise os dados deste contrato ou extrato e retorne APENAS um bloco JSON válid
 \`\`\``;
 
             let parts = [];
-            if (contractImageBase64) {
-                const base64Data = contractImageBase64.split(',')[1] || contractImageBase64;
+            if (contractFileBase64) {
+                const base64Data = contractFileBase64.split(',')[1] || contractFileBase64;
+                const mime = contractFileMimeType || (contractFileName.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
                 parts.push({
                     inlineData: {
-                        mimeType: "image/jpeg",
+                        mimeType: mime,
                         data: base64Data
                     }
                 });
             }
             if (contractTextInput.trim()) {
-                parts.push({ text: `Dados do Contrato:\n${contractTextInput.trim()}` });
+                parts.push({ text: `Dados/Texto Adicional do Contrato:\n${contractTextInput.trim()}` });
             }
             parts.push({ text: promptInstruction });
 
@@ -4681,7 +4684,9 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                     <button
                                                         onClick={() => {
                                                             setContractAnalysisResult(null);
-                                                            setContractImageBase64(null);
+                                                            setContractFileBase64(null);
+                                                            setContractFileMimeType('');
+                                                            setContractFileName('');
                                                             setContractTextInput('');
                                                             setIsContractAnalysisModalOpen(true);
                                                         }}
@@ -6840,41 +6845,64 @@ Responda ESTRITAMENTE um objeto JSON no formato:
 
                             {!contractAnalysisResult ? (
                                 <div className="space-y-4">
-                                    {/* Upload de Foto do Contrato */}
+                                    {/* Upload de Arquivo PDF ou Foto do Contrato */}
                                     <div>
                                         <label className="block text-xs font-bold text-slate-400 uppercase mb-2">
-                                            1. Enviar Foto do Contrato ou Extrato Bancário
+                                            1. Enviar Arquivo PDF ou Foto do Contrato / Extrato
                                         </label>
                                         <div className="border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl p-6 text-center hover:border-purple-500 transition relative bg-slate-50 dark:bg-slate-950/50">
                                             <input
                                                 type="file"
-                                                accept="image/*"
+                                                accept="application/pdf,image/*,.pdf"
                                                 onChange={(e) => {
                                                     const file = e.target.files[0];
                                                     if (!file) return;
+                                                    setContractFileName(file.name);
+                                                    setContractFileMimeType(file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg'));
                                                     const reader = new FileReader();
-                                                    reader.onload = (event) => setContractImageBase64(event.target.result);
+                                                    reader.onload = (event) => setContractFileBase64(event.target.result);
                                                     reader.readAsDataURL(file);
                                                 }}
                                                 className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
                                             />
-                                            {contractImageBase64 ? (
+                                            {contractFileBase64 ? (
                                                 <div className="space-y-2">
-                                                    <div className="w-16 h-16 rounded-2xl mx-auto overflow-hidden shadow-md">
-                                                        <img src={contractImageBase64} alt="Preview" className="w-full h-full object-cover" />
+                                                    {contractFileMimeType.includes('pdf') || contractFileName.toLowerCase().endsWith('.pdf') ? (
+                                                        <div className="w-16 h-16 rounded-2xl bg-red-100 dark:bg-red-950/60 text-red-600 dark:text-red-400 flex items-center justify-center mx-auto text-3xl shadow-sm border border-red-200 dark:border-red-900/40">
+                                                            📄
+                                                        </div>
+                                                    ) : (
+                                                        <div className="w-16 h-16 rounded-2xl mx-auto overflow-hidden shadow-md">
+                                                            <img src={contractFileBase64} alt="Preview" className="w-full h-full object-cover" />
+                                                        </div>
+                                                    )}
+                                                    <div>
+                                                        <p className="text-xs font-black text-emerald-600 truncate max-w-xs mx-auto">
+                                                            {contractFileName || 'Documento anexado com sucesso!'}
+                                                        </p>
+                                                        <span className="text-[10px] text-slate-400">
+                                                            {contractFileMimeType.includes('pdf') || contractFileName.toLowerCase().endsWith('.pdf') ? 'Arquivo PDF pronto para análise' : 'Foto do contrato anexada'} • Toque para trocar
+                                                        </span>
                                                     </div>
-                                                    <p className="text-xs font-black text-emerald-600">Foto do contrato anexada!</p>
-                                                    <span className="text-[10px] text-slate-400">Toque para trocar a imagem</span>
                                                 </div>
                                             ) : (
-                                                <div className="space-y-2">
-                                                    <div className="w-12 h-12 rounded-full bg-purple-50 dark:bg-purple-950 text-purple-600 flex items-center justify-center mx-auto text-2xl">
-                                                        📸
+                                                <div className="space-y-2.5">
+                                                    <div className="flex items-center justify-center gap-3">
+                                                        <div className="w-12 h-12 rounded-2xl bg-red-50 dark:bg-red-950/60 text-red-600 dark:text-red-400 flex items-center justify-center text-2xl shadow-sm">
+                                                            📄
+                                                        </div>
+                                                        <div className="w-12 h-12 rounded-2xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center text-2xl shadow-sm">
+                                                            📸
+                                                        </div>
                                                     </div>
-                                                    <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                                                        Tire uma foto ou envie a imagem do contrato
-                                                    </p>
-                                                    <span className="text-[10px] text-slate-400">Suporta fotos de contratos e extratos bancários</span>
+                                                    <div>
+                                                        <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                                                            Toque para enviar seu <strong>Contrato em PDF</strong> ou <strong>Foto</strong>
+                                                        </p>
+                                                        <span className="text-[10px] text-slate-400 block mt-0.5">
+                                                            Suporta arquivos PDF de bancos/financeiras e fotos/câmera do celular
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
@@ -6883,7 +6911,7 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                     {/* Ou Colar Texto do Contrato */}
                                     <div>
                                         <label className="block text-xs font-bold text-slate-400 uppercase mb-1">
-                                            2. Ou cole os dados/texto do contrato aqui
+                                            2. Ou cole dados adicionais / texto do contrato aqui
                                         </label>
                                         <textarea
                                             rows={3}
@@ -6896,19 +6924,19 @@ Responda ESTRITAMENTE um objeto JSON no formato:
 
                                     <button
                                         type="button"
-                                        disabled={isAnalyzingContract || (!contractTextInput.trim() && !contractImageBase64)}
+                                        disabled={isAnalyzingContract || (!contractTextInput.trim() && !contractFileBase64)}
                                         onClick={handleAnalyzeContractWithAI}
                                         className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 text-white font-black py-4 rounded-2xl text-sm shadow-lg shadow-purple-600/30 transition flex items-center justify-center gap-2 active:scale-98"
                                     >
                                         {isAnalyzingContract ? (
                                             <>
                                                 <Loader2 size={18} className="animate-spin" />
-                                                FinBot IA Analisando Contrato e Cláusulas...
+                                                FinBot IA Lendo PDF e Analisando Contrato...
                                             </>
                                         ) : (
                                             <>
                                                 <Sparkles size={18} className="text-amber-300" />
-                                                Analisar com Inteligência Artificial
+                                                Analisar PDF / Contrato com IA
                                             </>
                                         )}
                                     </button>
