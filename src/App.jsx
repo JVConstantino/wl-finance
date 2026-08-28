@@ -8031,6 +8031,8 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                             <option value="Citi Double Cash / Custom">Citibank (Double Cash / Custom Cash)</option>
                                             <option value="Discover it">Discover it</option>
                                             <option value="Apple Card (Goldman Sachs)">Apple Card (Mastercard)</option>
+                                            <option value="Venmo (PayPal / Synchrony)">Venmo (Conta & Cartão Venmo)</option>
+                                            <option value="Zelle / Cash App">Cash App / Zelle</option>
                                             <option value="Outro Banco / Cooperativa">Outro Banco Americano</option>
                                         </select>
                                     </div>
