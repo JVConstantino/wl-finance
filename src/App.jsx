@@ -147,6 +147,10 @@ const safeGet = (key, fallback) => {
     }
 };
 
+export const formatCurrency = (value) => {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
+};
+
 export default function App() {
     // 1. Estados Gerais de UI e Tema
     const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -1422,10 +1426,6 @@ Responda ESTRITAMENTE um objeto JSON no formato:
             percentComplete: Math.round((unlockedCount / totalBadges) * 100)
         };
     }, [transactions, savingsGoals, shoppingItems, monthlyTransactions, monthlySummary]);
-
-    const formatCurrency = (value) => {
-        return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
-    };
 
     const getCategoryIcon = (category, colorClass = '') => {
         if (category === 'Transferência') return <ArrowRightLeft size={18} className={colorClass} />;
