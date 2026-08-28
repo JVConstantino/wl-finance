@@ -151,6 +151,71 @@ export const formatCurrency = (value) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
 };
 
+// Funções de Processamento de Áudio WAV nativo para compatibilidade com iPhone/Safari/Android
+function flattenFloatBuffers(buffers) {
+    let length = 0;
+    for (let i = 0; i < buffers.length; i++) {
+        length += buffers[i].length;
+    }
+    const result = new Float32Array(length);
+    let offset = 0;
+    for (let i = 0; i < buffers.length; i++) {
+        result.set(buffers[i], offset);
+        offset += buffers[i].length;
+    }
+    return result;
+}
+
+function downsampleFloatBuffer(buffer, inRate, outRate) {
+    if (outRate >= inRate) return buffer;
+    const ratio = inRate / outRate;
+    const newLen = Math.round(buffer.length / ratio);
+    const result = new Float32Array(newLen);
+    let offsetResult = 0;
+    let offsetBuffer = 0;
+    while (offsetResult < result.length) {
+        const nextOffset = Math.round((offsetResult + 1) * ratio);
+        let sum = 0, count = 0;
+        for (let i = offsetBuffer; i < nextOffset && i < buffer.length; i++) {
+            sum += buffer[i];
+            count++;
+        }
+        result[offsetResult] = count > 0 ? sum / count : 0;
+        offsetResult++;
+        offsetBuffer = nextOffset;
+    }
+    return result;
+}
+
+function encodeFloatToWAV(samples, sampleRate) {
+    const buffer = new ArrayBuffer(44 + samples.length * 2);
+    const view = new DataView(buffer);
+    const writeStr = (v, offset, str) => {
+        for (let i = 0; i < str.length; i++) {
+            v.setUint8(offset + i, str.charCodeAt(i));
+        }
+    };
+    writeStr(view, 0, 'RIFF');
+    view.setUint32(4, 36 + samples.length * 2, true);
+    writeStr(view, 8, 'WAVE');
+    writeStr(view, 12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM
+    view.setUint16(22, 1, true); // Mono
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeStr(view, 36, 'data');
+    view.setUint32(40, samples.length * 2, true);
+    let offset = 44;
+    for (let i = 0; i < samples.length; i++, offset += 2) {
+        const s = Math.max(-1, Math.min(1, samples[i]));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    }
+    return new Blob([view], { type: 'audio/wav' });
+}
+
 export default function App() {
     // 1. Estados Gerais de UI e Tema
     const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -276,10 +341,12 @@ export default function App() {
     const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
     const [manualVoiceInput, setManualVoiceInput] = useState('');
     const [recordingSeconds, setRecordingSeconds] = useState(0);
-    const mediaRecorderRef = useRef(null);
-    const audioChunksRef = useRef([]);
+    const audioContextRef = useRef(null);
+    const audioProcessorRef = useRef(null);
+    const audioSourceRef = useRef(null);
+    const audioStreamRef = useRef(null);
+    const audioBuffersRef = useRef([]);
     const recordingTimerRef = useRef(null);
-    const audioFileInputRef = useRef(null);
 
     // 14. Relatório Executivo para Impressão / PDF
     const [isReportModalOpen, setIsReportModalOpen] = useState(false);
@@ -1176,6 +1243,9 @@ Estruture a resposta com tópicos claros usando emojis:
     // =========================================================================
     // 1. LANÇAMENTO POR VOZ / ÁUDIO UNIVERSAL COM GEMINI IA
     // =========================================================================
+    // =========================================================================
+    // 1. LANÇAMENTO POR VOZ / ÁUDIO COM WEBAUDIO (100% COMPATÍVEL COM IPHONE/PWA/ANDROID)
+    // =========================================================================
     const handleStartVoiceRecording = async () => {
         if (!geminiApiKey.trim()) {
             showToast("Configure sua chave Gemini no FinBot primeiro.");
@@ -1188,55 +1258,37 @@ Estruture a resposta com tópicos claros usando emojis:
         setRecordingSeconds(0);
 
         try {
-            // Função universal para obter stream de áudio com fallbacks para navegadores móveis
-            const getAudioStream = async () => {
-                if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                    return await navigator.mediaDevices.getUserMedia({ audio: true });
-                }
-                const legacyGUM = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia;
-                if (legacyGUM) {
-                    return new Promise((resolve, reject) => {
-                        legacyGUM.call(navigator, { audio: true }, resolve, reject);
-                    });
-                }
-                throw new Error("NO_MEDIA_DEVICES");
-            };
-
-            const stream = await getAudioStream();
-            audioChunksRef.current = [];
-
-            // Detecta melhor formato suportado pelo celular (Android, iOS Safari, Chrome)
-            let options = {};
-            if (window.MediaRecorder) {
-                if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-                    options = { mimeType: 'audio/webm;codecs=opus' };
-                } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-                    options = { mimeType: 'audio/mp4' };
-                } else if (MediaRecorder.isTypeSupported('audio/aac')) {
-                    options = { mimeType: 'audio/aac' };
-                }
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContextClass) {
+                showToast("Áudio não suportado neste navegador.");
+                return;
             }
 
-            const mediaRecorder = options.mimeType ? new MediaRecorder(stream, options) : new MediaRecorder(stream);
-            mediaRecorderRef.current = mediaRecorder;
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioStreamRef.current = stream;
+            audioBuffersRef.current = [];
 
-            mediaRecorder.ondataavailable = (e) => {
-                if (e.data && e.data.size > 0) {
-                    audioChunksRef.current.push(e.data);
-                }
+            const audioCtx = new AudioContextClass();
+            if (audioCtx.state === 'suspended') {
+                await audioCtx.resume();
+            }
+            audioContextRef.current = audioCtx;
+
+            const source = audioCtx.createMediaStreamSource(stream);
+            audioSourceRef.current = source;
+
+            // Buffer size 4096 para captura limpa e leve
+            const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+            audioProcessorRef.current = processor;
+
+            processor.onaudioprocess = (e) => {
+                const inputData = e.inputBuffer.getChannelData(0);
+                audioBuffersRef.current.push(new Float32Array(inputData));
             };
 
-            mediaRecorder.onstop = async () => {
-                clearInterval(recordingTimerRef.current);
-                stream.getTracks().forEach(track => track.stop());
-                const mime = mediaRecorder.mimeType || 'audio/webm';
-                const audioBlob = new Blob(audioChunksRef.current, { type: mime });
-                if (audioBlob.size > 0) {
-                    await processAudioBlobWithAI(audioBlob);
-                }
-            };
+            source.connect(processor);
+            processor.connect(audioCtx.destination);
 
-            mediaRecorder.start(250);
             setIsListeningVoice(true);
 
             // Timer de contagem
@@ -1246,20 +1298,51 @@ Estruture a resposta com tópicos claros usando emojis:
             }, 1000);
 
         } catch (err) {
-            console.warn('getUserMedia não disponível no iOS Standalone PWA, acionando gravador nativo:', err);
+            console.error('Erro ao acessar microfone:', err);
             setIsListeningVoice(false);
-            if (audioFileInputRef.current) {
-                audioFileInputRef.current.click();
-            } else {
-                showToast("Você pode gravar pelo gravador do celular ou digitar a frase!");
-            }
+            showToast("Permissão de microfone negada. Libere nas configurações do Safari!");
         }
     };
 
-    const handleStopVoiceRecording = () => {
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-            mediaRecorderRef.current.stop();
-            setIsListeningVoice(false);
+    const handleStopVoiceRecording = async () => {
+        setIsListeningVoice(false);
+        clearInterval(recordingTimerRef.current);
+
+        try {
+            if (audioProcessorRef.current) {
+                audioProcessorRef.current.disconnect();
+                audioProcessorRef.current = null;
+            }
+            if (audioSourceRef.current) {
+                audioSourceRef.current.disconnect();
+                audioSourceRef.current = null;
+            }
+            if (audioStreamRef.current) {
+                audioStreamRef.current.getTracks().forEach(t => t.stop());
+                audioStreamRef.current = null;
+            }
+
+            const sampleRate = audioContextRef.current ? audioContextRef.current.sampleRate : 44100;
+            if (audioContextRef.current) {
+                audioContextRef.current.close();
+                audioContextRef.current = null;
+            }
+
+            const flattened = flattenFloatBuffers(audioBuffersRef.current);
+            if (flattened.length === 0) {
+                showToast("Nenhum som detectado. Tente falar novamente.");
+                return;
+            }
+
+            // Downsample para 16kHz WAV mono (ótimo para voz e super leve para o Gemini)
+            const targetRate = 16000;
+            const downsampled = downsampleFloatBuffer(flattened, sampleRate, targetRate);
+            const wavBlob = encodeFloatToWAV(downsampled, targetRate);
+
+            await processAudioBlobWithAI(wavBlob);
+        } catch (e) {
+            console.error('Erro ao finalizar áudio:', e);
+            showToast("Erro ao processar gravação de voz.");
         }
     };
 
@@ -5175,32 +5258,7 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                 </p>
                             </div>
 
-                            {/* Input oculto para gravação nativa de áudio (compatível com iPhone PWA / Tela de Início) */}
-                            <input
-                                ref={audioFileInputRef}
-                                type="file"
-                                accept="audio/*"
-                                capture="microphone"
-                                className="hidden"
-                                onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (file) {
-                                        processAudioBlobWithAI(file);
-                                    }
-                                    e.target.value = '';
-                                }}
-                            />
 
-                            {/* Botão de Gravação Nativa (100% compatível com iOS Tela de Início) */}
-                            <div className="space-y-2">
-                                <button
-                                    type="button"
-                                    onClick={() => audioFileInputRef.current?.click()}
-                                    className="w-full py-2.5 px-3 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-800 dark:text-amber-300 font-black text-xs rounded-2xl border border-amber-200 dark:border-amber-800 transition flex items-center justify-center gap-2"
-                                >
-                                    <Mic size={15} /> 🎙️ Gravar pelo Gravador do Celular / iPhone
-                                </button>
-                            </div>
 
                             {/* Opção Alternativa: Digitação Rápida para a IA */}
                             <div className="pt-2 border-t border-slate-100 dark:border-slate-800 text-left">
