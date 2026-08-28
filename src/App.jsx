@@ -224,8 +224,18 @@ const safeGet = (key, fallback) => {
     }
 };
 
-export const formatCurrency = (value) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
+let globalCurrency = 'USD';
+try {
+    const saved = localStorage.getItem('fp_currency');
+    if (saved) globalCurrency = JSON.parse(saved);
+} catch (e) {}
+
+export const formatCurrency = (value, currency = null) => {
+    const curr = currency || globalCurrency || 'USD';
+    if (curr === 'BRL') {
+        return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
+    }
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value || 0);
 };
 
 // Funções de Processamento de Áudio WAV nativo para compatibilidade com iPhone/Safari/Android
@@ -439,6 +449,9 @@ export default function App() {
     const [finbotChatInput, setFinbotChatInput] = useState('');
     const [isSendingChatMessage, setIsSendingChatMessage] = useState(false);
     const chatMessagesEndRef = useRef(null);
+
+    // 19.5 Moeda do Sistema (Dólar USD padrão / Real BRL)
+    const [selectedCurrency, setSelectedCurrency] = useState(() => safeGet('fp_currency', 'USD'));
 
     // 20. Módulo de Financiamentos & Dívidas do Casal
     const [financings, setFinancings] = useState(() => safeGet('fp_financings', defaultSampleFinancings));
@@ -1421,6 +1434,12 @@ Mensagem do casal:
         chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [chatMessages, isFinbotChatOpen]);
 
+    // Sincronização da Moeda Selecionada
+    useEffect(() => {
+        globalCurrency = selectedCurrency;
+        localStorage.setItem('fp_currency', JSON.stringify(selectedCurrency));
+    }, [selectedCurrency]);
+
     // Sincronização LocalStorage para Financiamentos
     useEffect(() => {
         localStorage.setItem('fp_financings', JSON.stringify(financings));
@@ -1856,14 +1875,14 @@ Analise detalhadamente o documento anexado (PDF ou imagem) ou texto deste contra
         setIsAiDiagnosisOpen(true);
         try {
             const currentMonthName = currentDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
-            const promptText = `Você é o FinBot, consultor financeiro pessoal e do casal. Analise os seguintes dados do mês de ${currentMonthName} e gere um diagnóstico completo, elegante, direto, profissional e acolhedor em Português do Brasil:
-- Total Receitas: R$ ${totals.receitas.toFixed(2)}
-- Total Despesas: R$ ${totals.despesas.toFixed(2)}
-- Total Investimentos: R$ ${totals.investimentos.toFixed(2)}
-- Saldo Líquido do Mês: R$ ${(totals.receitas - totals.despesas).toFixed(2)}
+            const promptText = `Você é o FinBot, consultor financeiro pessoal e do casal. Analise os seguintes dados do mês de ${currentMonthName} e gere um diagnóstico completo, elegante, direto, profissional e acolhedor em Português (moeda atual: ${globalCurrency}):
+- Total Receitas: ${formatCurrency(totals.receitas)}
+- Total Despesas: ${formatCurrency(totals.despesas)}
+- Total Investimentos: ${formatCurrency(totals.investimentos)}
+- Saldo Líquido do Mês: ${formatCurrency(totals.receitas - totals.despesas)}
 - Taxa de Poupança: ${totals.receitas > 0 ? (((totals.receitas - totals.despesas) / totals.receitas) * 100).toFixed(1) : 0}%
-- Top Categorias de Gastos: ${(analysisData.data || []).slice(0, 5).map(c => `${c.name}: R$ ${c.amount.toFixed(2)} (${c.percentage.toFixed(1)}%)`).join(', ')}
-- Cofrinhos e Metas do Casal: ${savingsGoals.map(g => `${g.title}: R$ ${g.currentAmount} de R$ ${g.targetAmount}`).join(', ')}
+- Top Categorias de Gastos: ${(analysisData.data || []).slice(0, 5).map(c => `${c.name}: ${formatCurrency(c.amount)} (${c.percentage.toFixed(1)}%)`).join(', ')}
+- Cofrinhos e Metas do Casal: ${savingsGoals.map(g => `${g.title}: ${formatCurrency(g.currentAmount)} de ${formatCurrency(g.targetAmount)}`).join(', ')}
 
 Estruture a resposta com tópicos claros usando emojis:
 1. 🏆 **Destaques & Conquistas do Casal** (aproveitamento do orçamento e percentual guardado)
@@ -1925,11 +1944,11 @@ Estruture a resposta com tópicos claros usando emojis:
         if (diff > 0.01) {
             whoOwesWho = 'esposa_owes_marido';
             settlementAmount = diff / 2;
-            settlementText = `A Esposa deve transferir ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(settlementAmount)} para Você para equilibrar os gastos 50/50.`;
+            settlementText = `A Esposa deve transferir ${formatCurrency(settlementAmount)} para Você para equilibrar os gastos 50/50.`;
         } else if (diff < -0.01) {
             whoOwesWho = 'marido_owes_esposa';
             settlementAmount = Math.abs(diff) / 2;
-            settlementText = `Você deve transferir ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(settlementAmount)} para a Esposa para equilibrar os gastos 50/50.`;
+            settlementText = `Você deve transferir ${formatCurrency(settlementAmount)} para a Esposa para equilibrar os gastos 50/50.`;
         } else {
             settlementText = `Os gastos individuais estão perfeitamente equilibrados!`;
         }
@@ -2634,7 +2653,7 @@ Responda ESTRITAMENTE um objeto JSON no formato:
             return;
         }
         try {
-            const headers = ["Data", "Tipo", "Categoria", "Descrição", "Valor (R$)", "Estado", "Conta"];
+            const headers = ["Data", "Tipo", "Categoria", "Descrição", "Valor ($)", "Estado", "Conta"];
             const rows = monthlyTransactions.map(t => [
                 t.date,
                 t.type.toUpperCase(),
@@ -3289,6 +3308,33 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                     >
                                         <Key size={16} className="text-indigo-500" /> Chave Gemini IA
                                     </button>
+                                </div>
+
+                                {/* SELETOR DE MOEDA (USD vs BRL) */}
+                                <div className="pt-2 border-t border-slate-100 dark:border-slate-800 px-1">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1.5">Moeda do App</span>
+                                    <div className="grid grid-cols-2 gap-1.5">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setSelectedCurrency('USD');
+                                                showToast("Moeda alterada para Dólar Americano ($ USD)");
+                                            }}
+                                            className={`py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 ${selectedCurrency === 'USD' ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}
+                                        >
+                                            🇺🇸 Dólar ($)
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setSelectedCurrency('BRL');
+                                                showToast("Moeda alterada para Real Brasileiro (R$ BRL)");
+                                            }}
+                                            className={`py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 ${selectedCurrency === 'BRL' ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}
+                                        >
+                                            🇧🇷 Real (R$)
+                                        </button>
+                                    </div>
                                 </div>
 
                             </div>
@@ -5162,7 +5208,7 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Valor (R$)</label>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Valor ($)</label>
                                     <input
                                         type="number"
                                         step="0.01"
@@ -5352,7 +5398,7 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                 setIsGoalModalOpen(false);
                                 showToast(`Meta de ${editingCategoryGoal} atualizada!`);
                             }}>
-                                <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Teto Mensal de Gastos (R$)</label>
+                                <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Teto Mensal de Gastos ($)</label>
                                 <input
                                     type="number"
                                     step="10"
@@ -5911,7 +5957,7 @@ Responda ESTRITAMENTE um objeto JSON no formato:
 
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
-                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Valor Alvo (R$)</label>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Valor Alvo ($)</label>
                                         <input
                                             type="number"
                                             step="0.01"
@@ -5923,7 +5969,7 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Já Guardado (R$)</label>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Já Guardado ($)</label>
                                         <input
                                             type="number"
                                             step="0.01"
@@ -6016,7 +6062,7 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                             <form onSubmit={handleDepositToSavingsGoal} className="space-y-4">
                                 <div>
                                     <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">
-                                        Valor a {depositActionType === 'deposit' ? 'Guardar' : 'Resgatar'} (R$)
+                                        Valor a {depositActionType === 'deposit' ? 'Guardar' : 'Resgatar'} ($)
                                     </label>
                                     <input
                                         type="number"
@@ -6652,11 +6698,11 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                     🔍 Onde o dinheiro mais escapou?
                                 </button>
                                 <button
-                                    onClick={() => handleSendFinbotChatMessage("Me dê 3 dicas práticas para economizarmos R$ 500 no próximo mês.")}
+                                    onClick={() => handleSendFinbotChatMessage("Me dê 3 dicas práticas para economizarmos $500 no próximo mês.")}
                                     disabled={isSendingChatMessage}
                                     className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-purple-50 hover:text-purple-600 dark:hover:bg-purple-950/50 dark:hover:text-purple-300 text-[10px] font-bold text-slate-600 dark:text-slate-300 rounded-xl whitespace-nowrap transition shrink-0"
                                 >
-                                    💡 Como economizar R$ 500?
+                                    💡 Como economizar $500?
                                 </button>
                                 <button
                                     onClick={() => handleSendFinbotChatMessage("Como podemos acelerar nossa meta de liberdade financeira (FIRE)?")}
@@ -6743,7 +6789,7 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Valor da Parcela (R$)</label>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Valor da Parcela ($)</label>
                                         <input
                                             type="number"
                                             step="0.01"
