@@ -274,6 +274,11 @@ export default function App() {
     const [voiceTranscript, setVoiceTranscript] = useState('');
     const [isProcessingVoice, setIsProcessingVoice] = useState(false);
     const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
+    const [manualVoiceInput, setManualVoiceInput] = useState('');
+    const [recordingSeconds, setRecordingSeconds] = useState(0);
+    const mediaRecorderRef = useRef(null);
+    const audioChunksRef = useRef([]);
+    const recordingTimerRef = useRef(null);
 
     // 14. Relatório Executivo para Impressão / PDF
     const [isReportModalOpen, setIsReportModalOpen] = useState(false);
@@ -1168,47 +1173,175 @@ Estruture a resposta com tópicos claros usando emojis:
     };
 
     // =========================================================================
-    // 1. LANÇAMENTO POR VOZ / ÁUDIO COM GEMINI IA
+    // 1. LANÇAMENTO POR VOZ / ÁUDIO UNIVERSAL COM GEMINI IA
     // =========================================================================
-    const handleStartVoiceRecording = () => {
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) {
-            showToast("Reconhecimento de voz não suportado neste navegador. Tente no Chrome ou Safari.");
+    const handleStartVoiceRecording = async () => {
+        if (!geminiApiKey.trim()) {
+            showToast("Configure sua chave Gemini no FinBot primeiro.");
+            setIsApiKeyModalOpen(true);
             return;
         }
 
+        setVoiceTranscript('');
+        setIsVoiceModalOpen(true);
+        setRecordingSeconds(0);
+
         try {
-            const recognition = new SpeechRecognition();
-            recognition.lang = 'pt-BR';
-            recognition.continuous = false;
-            recognition.interimResults = false;
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                showToast("Microfone não disponível. Você pode digitar a frase abaixo!");
+                return;
+            }
 
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioChunksRef.current = [];
+
+            // Detecta melhor formato suportado pelo celular (Android, iOS Safari, Chrome)
+            let options = {};
+            if (window.MediaRecorder) {
+                if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+                    options = { mimeType: 'audio/webm;codecs=opus' };
+                } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+                    options = { mimeType: 'audio/mp4' };
+                } else if (MediaRecorder.isTypeSupported('audio/aac')) {
+                    options = { mimeType: 'audio/aac' };
+                }
+            }
+
+            const mediaRecorder = options.mimeType ? new MediaRecorder(stream, options) : new MediaRecorder(stream);
+            mediaRecorderRef.current = mediaRecorder;
+
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data && e.data.size > 0) {
+                    audioChunksRef.current.push(e.data);
+                }
+            };
+
+            mediaRecorder.onstop = async () => {
+                clearInterval(recordingTimerRef.current);
+                stream.getTracks().forEach(track => track.stop());
+                const mime = mediaRecorder.mimeType || 'audio/webm';
+                const audioBlob = new Blob(audioChunksRef.current, { type: mime });
+                if (audioBlob.size > 0) {
+                    await processAudioBlobWithAI(audioBlob);
+                }
+            };
+
+            mediaRecorder.start(250);
             setIsListeningVoice(true);
-            setVoiceTranscript('');
-            setIsVoiceModalOpen(true);
 
-            recognition.onresult = async (event) => {
-                const transcript = event.results[0][0].transcript;
-                setVoiceTranscript(transcript);
-                setIsListeningVoice(false);
-                await processVoiceExpenseWithAI(transcript);
-            };
+            // Timer de contagem
+            clearInterval(recordingTimerRef.current);
+            recordingTimerRef.current = setInterval(() => {
+                setRecordingSeconds(prev => prev + 1);
+            }, 1000);
 
-            recognition.onerror = (err) => {
-                console.error('Erro no reconhecimento de voz:', err);
-                setIsListeningVoice(false);
-                showToast("Não consegui ouvir com clareza. Tente falar novamente.");
-            };
-
-            recognition.onend = () => {
-                setIsListeningVoice(false);
-            };
-
-            recognition.start();
-        } catch (e) {
-            console.error(e);
+        } catch (err) {
+            console.error('Erro ao abrir microfone:', err);
             setIsListeningVoice(false);
-            showToast("Erro ao acessar o microfone.");
+            showToast("Permissão de microfone não concedida. Você pode digitar a frase!");
+        }
+    };
+
+    const handleStopVoiceRecording = () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+            mediaRecorderRef.current.stop();
+            setIsListeningVoice(false);
+        }
+    };
+
+    const processAudioBlobWithAI = async (audioBlob) => {
+        setIsProcessingVoice(true);
+        try {
+            const todayStr = new Date().toISOString().split('T')[0];
+            const reader = new FileReader();
+
+            const base64Data = await new Promise((resolve, reject) => {
+                reader.onloadend = () => {
+                    const result = reader.result;
+                    const base64 = typeof result === 'string' && result.includes(',') ? result.split(',')[1] : result;
+                    resolve(base64);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(audioBlob);
+            });
+
+            const mimeType = (audioBlob.type || 'audio/webm').split(';')[0];
+
+            const prompt = `Ouça o áudio gravado em português do Brasil e extraia os dados para lançamento financeiro.
+
+Categorias disponíveis:
+- Saída: Casa, Alimentação, Transporte, Lazer, Saúde, Educação, Assinaturas, Outros
+- Entrada: Salário, Freelance, Rendimentos, Vendas, Outros
+- Investimento: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobiliários
+
+Contas disponíveis:
+- acc_main (Conta Principal / Banco / Pix / Débito)
+- acc_wallet (Dinheiro Físico / Carteira)
+- acc_credit (Cartão de Crédito)
+
+Responda ESTRITAMENTE um objeto JSON no formato:
+{
+  "type": "saida" | "entrada" | "investimento",
+  "amount": number (ex: 45.50),
+  "category": string (uma das categorias acima),
+  "description": string (descrição concisa e limpa),
+  "date": "YYYY-MM-DD" (use ${todayStr} se não especificada outra data),
+  "paidBy": "marido" | "esposa" | "conjunto",
+  "accountId": "acc_main" | "acc_wallet" | "acc_credit",
+  "transcription": string (o que a pessoa falou no áudio)
+}`;
+
+            const payload = {
+                contents: [{
+                    parts: [
+                        {
+                            inline_data: {
+                                mime_type: mimeType,
+                                data: base64Data
+                            }
+                        },
+                        { text: prompt }
+                    ]
+                }],
+                generationConfig: {
+                    temperature: 0.1,
+                    response_mime_type: "application/json"
+                }
+            };
+
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${geminiApiKey.trim()}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const json = await res.json();
+            const rawText = json.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!rawText) throw new Error(json.error?.message || "IA não retornou resposta do áudio");
+
+            const parsed = JSON.parse(rawText);
+            setVoiceTranscript(parsed.transcription || '');
+
+            setFormData({
+                type: parsed.type || 'saida',
+                amount: parsed.amount ? String(parsed.amount) : '',
+                category: parsed.category || 'Outros',
+                date: parsed.date || todayStr,
+                description: parsed.description || parsed.transcription || 'Lançamento por Voz',
+                status: 'pago',
+                isRepeating: false,
+                accountId: parsed.accountId || 'acc_main',
+                paidBy: parsed.paidBy || 'conjunto'
+            });
+
+            setIsVoiceModalOpen(false);
+            setIsFormOpen(true);
+            showToast(`Entendido por Voz: ${parsed.description || 'Lançamento'} (${formatCurrency(parsed.amount)})!`);
+        } catch (err) {
+            console.error(err);
+            showToast("Erro ao processar áudio: " + (err.message || 'tente falar novamente'));
+        } finally {
+            setIsProcessingVoice(false);
         }
     };
 
@@ -1283,7 +1416,7 @@ Responda ESTRITAMENTE um objeto JSON no formato:
             showToast(`Entendido por Voz: ${parsed.description || 'Lançamento'} (${formatCurrency(parsed.amount)})!`);
         } catch (err) {
             console.error(err);
-            showToast("Erro ao processar voz: " + (err.message || 'tente novamente'));
+            showToast("Erro ao processar frase: " + (err.message || 'tente novamente'));
         } finally {
             setIsProcessingVoice(false);
         }
@@ -4968,41 +5101,55 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                 </button>
                             </div>
 
-                            {/* Ícone Pulsante de Microfone */}
-                            <div className="py-4">
+                            {/* Ícone Pulsante de Microfone com Timer */}
+                            <div className="py-2">
                                 <div className="relative inline-flex items-center justify-center">
                                     {isListeningVoice && (
                                         <>
-                                            <span className="absolute w-28 h-28 rounded-full bg-amber-400/20 animate-ping"></span>
-                                            <span className="absolute w-20 h-20 rounded-full bg-amber-500/30 animate-pulse"></span>
+                                            <span className="absolute w-32 h-32 rounded-full bg-amber-400/20 animate-ping"></span>
+                                            <span className="absolute w-24 h-24 rounded-full bg-amber-500/30 animate-pulse"></span>
                                         </>
                                     )}
                                     {isProcessingVoice && (
-                                        <span className="absolute w-24 h-24 rounded-full bg-blue-500/20 animate-spin border-2 border-dashed border-blue-500"></span>
+                                        <span className="absolute w-28 h-28 rounded-full bg-blue-500/20 animate-spin border-2 border-dashed border-blue-500"></span>
                                     )}
                                     <button
                                         type="button"
-                                        onClick={isListeningVoice ? () => setIsListeningVoice(false) : handleStartVoiceRecording}
-                                        className={`w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl shadow-xl transition-all relative z-10 ${isProcessingVoice ? 'bg-blue-600' : isListeningVoice ? 'bg-amber-500 scale-110' : 'bg-slate-700 hover:bg-slate-600'}`}
+                                        onClick={isListeningVoice ? handleStopVoiceRecording : handleStartVoiceRecording}
+                                        disabled={isProcessingVoice}
+                                        className={`w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl shadow-2xl transition-all relative z-10 ${
+                                            isProcessingVoice
+                                                ? 'bg-blue-600'
+                                                : isListeningVoice
+                                                ? 'bg-rose-500 hover:bg-rose-600 scale-110 shadow-rose-500/40 animate-pulse'
+                                                : 'bg-gradient-to-tr from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-amber-500/30 active:scale-95'
+                                        }`}
                                     >
                                         {isProcessingVoice ? (
                                             <Loader2 size={32} className="animate-spin" />
                                         ) : isListeningVoice ? (
-                                            <Mic size={34} className="animate-bounce" />
+                                            <Square size={28} className="fill-white" />
                                         ) : (
-                                            <MicOff size={32} />
+                                            <Mic size={34} />
                                         )}
                                     </button>
                                 </div>
+
+                                {isListeningVoice && (
+                                    <div className="mt-3 flex items-center justify-center gap-1.5 text-xs font-black text-rose-500 animate-pulse">
+                                        <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                                        <span>Gravando... 00:{recordingSeconds < 10 ? `0${recordingSeconds}` : recordingSeconds}</span>
+                                    </div>
+                                )}
                             </div>
 
-                            {/* Texto de Status & Transcrição */}
+                            {/* Texto de Status & Instrução */}
                             <div>
-                                <h3 className="text-lg font-black text-slate-800 dark:text-white mb-1.5">
+                                <h3 className="text-lg font-black text-slate-800 dark:text-white mb-1">
                                     {isProcessingVoice
-                                        ? "Processando com Inteligência Artificial..."
+                                        ? "FinBot IA ouvindo seu áudio..."
                                         : isListeningVoice
-                                        ? "Estou ouvindo... Pode falar!"
+                                        ? "Gravando sua voz! Toque no quadrado vermelho para enviar"
                                         : "Toque no microfone para falar"}
                                 </h3>
                                 <p className="text-xs text-slate-400 px-4">
@@ -5014,11 +5161,48 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                 </p>
                             </div>
 
-                            {/* Botão de Cancelar / Tentar Novamente */}
-                            <div className="pt-2">
+                            {/* Opção Alternativa: Digitação Rápida para a IA */}
+                            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 text-left">
+                                <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">
+                                    Ou digite a frase rápida para a IA:
+                                </label>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={manualVoiceInput}
+                                        onChange={(e) => setManualVoiceInput(e.target.value)}
+                                        placeholder="Ex: Abasteci 120 no posto pelo pix"
+                                        className="flex-1 text-xs font-medium text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl px-3.5 py-2.5 outline-none focus:ring-2 focus:ring-amber-500"
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && manualVoiceInput.trim()) {
+                                                e.preventDefault();
+                                                processVoiceExpenseWithAI(manualVoiceInput.trim());
+                                            }
+                                        }}
+                                    />
+                                    <button
+                                        type="button"
+                                        disabled={!manualVoiceInput.trim() || isProcessingVoice}
+                                        onClick={() => {
+                                            if (manualVoiceInput.trim()) {
+                                                processVoiceExpenseWithAI(manualVoiceInput.trim());
+                                            }
+                                        }}
+                                        className="bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-xs font-black px-4 rounded-2xl transition flex items-center justify-center gap-1 shrink-0"
+                                    >
+                                        <Sparkles size={14} /> Enviar
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Botão de Cancelar */}
+                            <div>
                                 <button
                                     type="button"
-                                    onClick={() => { setIsListeningVoice(false); setIsVoiceModalOpen(false); }}
+                                    onClick={() => {
+                                        handleStopVoiceRecording();
+                                        setIsVoiceModalOpen(false);
+                                    }}
                                     className="w-full py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-xs rounded-2xl hover:bg-slate-200 transition"
                                 >
                                     Cancelar
