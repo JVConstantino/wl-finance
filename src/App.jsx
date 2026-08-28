@@ -350,9 +350,9 @@ export default function App() {
     const [isScanningReceipt, setIsScanningReceipt] = useState(false);
 
     // 5. Estados de Dados Principais (com persistência LocalStorage segura)
-    const [transactions, setTransactions] = useState(() => safeGet('fp_transactions', initialSampleTransactions));
-    const [repeatingRules, setRepeatingRules] = useState(() => safeGet('fp_rules', initialSampleRules));
-    const [monthlyGoals, setMonthlyGoals] = useState(() => safeGet('fp_goals', { 'Casa': 2500, 'Alimentação': 1200, 'Transporte': 600, 'Lazer': 500 }));
+    const [transactions, setTransactions] = useState(() => safeGet('fp_transactions', []));
+    const [repeatingRules, setRepeatingRules] = useState(() => safeGet('fp_rules', []));
+    const [monthlyGoals, setMonthlyGoals] = useState(() => safeGet('fp_goals', {}));
     const [customCategories, setCustomCategories] = useState(() => safeGet('fp_custom_categories', []));
     const [accounts, setAccounts] = useState(() => safeGet('fp_accounts', defaultAccounts));
     const [formData, setFormData] = useState({
@@ -393,7 +393,7 @@ export default function App() {
     const [confirmPinInput, setConfirmPinInput] = useState('');
 
     // 8. Cofrinhos & Sonhos do Casal
-    const [savingsGoals, setSavingsGoals] = useState(() => safeGet('fp_savings_goals', initialSampleSavingsGoals));
+    const [savingsGoals, setSavingsGoals] = useState(() => safeGet('fp_savings_goals', []));
     const [isSavingsModalOpen, setIsSavingsModalOpen] = useState(false);
     const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
     const [selectedSavingsGoal, setSelectedSavingsGoal] = useState(null);
@@ -402,7 +402,7 @@ export default function App() {
     const [newGoalData, setNewGoalData] = useState({ title: '', targetAmount: '', currentAmount: '0', deadline: '', icon: '🎯', color: 'from-blue-600 to-indigo-600' });
 
     // 9. Lista de Mercado / Compras Compartilhada
-    const [shoppingItems, setShoppingItems] = useState(() => safeGet('fp_shopping_items', initialSampleShoppingItems));
+    const [shoppingItems, setShoppingItems] = useState(() => safeGet('fp_shopping_items', []));
     const [isShoppingModalOpen, setIsShoppingModalOpen] = useState(false);
     const [newShopItem, setNewShopItem] = useState({ name: '', quantity: '1 un', estimatedPrice: '', category: 'Geral', addedBy: 'conjunto' });
 
@@ -455,7 +455,7 @@ export default function App() {
     const [selectedCurrency, setSelectedCurrency] = useState(() => safeGet('fp_currency', 'USD'));
 
     // 20. Módulo de Financiamentos & Dívidas do Casal
-    const [financings, setFinancings] = useState(() => safeGet('fp_financings', defaultSampleFinancings));
+    const [financings, setFinancings] = useState(() => safeGet('fp_financings', []));
     const [isFinancingModalOpen, setIsFinancingModalOpen] = useState(false);
     const [isContractAnalysisModalOpen, setIsContractAnalysisModalOpen] = useState(false);
     const [contractFileBase64, setContractFileBase64] = useState(null);
@@ -483,40 +483,15 @@ export default function App() {
 
     // 21. Custos Complementares do Carro nos EUA (TCO)
     const [carExtraCosts, setCarExtraCosts] = useState(() => safeGet('fp_car_extra_costs', {
-        insurance: 160,
-        gasMonthly: 140,
-        maintenance: 45,
-        tolls: 25
+        insurance: 0,
+        gasMonthly: 0,
+        maintenance: 0,
+        tolls: 0
     }));
     const [isCarCostsModalOpen, setIsCarCostsModalOpen] = useState(false);
 
     // 22. Conexão Bancária Automática nos EUA (Plaid & Apple Pay)
-    const [connectedCards, setConnectedCards] = useState(() => safeGet('fp_connected_cards', [
-        {
-            id: 'card_chase_husband',
-            institution: 'Chase Sapphire',
-            mask: '4821',
-            type: 'credit',
-            owner: 'marido',
-            balance: 1420.50,
-            lastSync: 'Hoje, 14:30',
-            status: 'active',
-            logo: '💳',
-            color: 'from-blue-700 to-indigo-900'
-        },
-        {
-            id: 'card_amex_wife',
-            institution: 'Amex Gold',
-            mask: '9312',
-            type: 'credit',
-            owner: 'esposa',
-            balance: 890.20,
-            lastSync: 'Hoje, 12:15',
-            status: 'active',
-            logo: '💳',
-            color: 'from-amber-600 to-yellow-800'
-        }
-    ]));
+    const [connectedCards, setConnectedCards] = useState(() => safeGet('fp_connected_cards', []));
     const [plaidConfig, setPlaidConfig] = useState(() => safeGet('fp_plaid_config', {
         clientId: '',
         secret: '',

@@ -634,18 +634,38 @@ export const migrateAllLocalData = async (localData, userId, familyId) => {
     }
 };
 
-export const deleteAllUserCloudData = async (userId) => {
+export const deleteAllUserCloudData = async (userId, familyId) => {
     const supabase = getSupabase();
-    if (!supabase || !userId) return;
+    if (!supabase) return;
     try {
+        if (userId) {
+            await Promise.allSettled([
+                supabase.from('transactions').delete().eq('user_id', userId),
+                supabase.from('accounts').delete().eq('user_id', userId),
+                supabase.from('repeating_rules').delete().eq('user_id', userId),
+                supabase.from('monthly_goals').delete().eq('user_id', userId),
+                supabase.from('savings_goals').delete().eq('user_id', userId),
+                supabase.from('shopping_items').delete().eq('user_id', userId),
+                supabase.from('custom_categories').delete().eq('user_id', userId)
+            ]);
+        }
+        if (familyId) {
+            await Promise.allSettled([
+                supabase.from('transactions').delete().eq('family_id', familyId),
+                supabase.from('accounts').delete().eq('family_id', familyId),
+                supabase.from('repeating_rules').delete().eq('family_id', familyId),
+                supabase.from('monthly_goals').delete().eq('family_id', familyId),
+                supabase.from('savings_goals').delete().eq('family_id', familyId),
+                supabase.from('shopping_items').delete().eq('family_id', familyId),
+                supabase.from('custom_categories').delete().eq('family_id', familyId)
+            ]);
+        }
+        // Também limpar registros de teste antigos que possam estar sem user_id
         await Promise.allSettled([
-            supabase.from('transactions').delete().eq('user_id', userId),
-            supabase.from('accounts').delete().eq('user_id', userId),
-            supabase.from('repeating_rules').delete().eq('user_id', userId),
-            supabase.from('monthly_goals').delete().eq('user_id', userId),
-            supabase.from('savings_goals').delete().eq('user_id', userId),
-            supabase.from('shopping_items').delete().eq('user_id', userId),
-            supabase.from('custom_categories').delete().eq('user_id', userId)
+            supabase.from('transactions').delete().is('user_id', null),
+            supabase.from('repeating_rules').delete().is('user_id', null),
+            supabase.from('savings_goals').delete().is('user_id', null),
+            supabase.from('shopping_items').delete().is('user_id', null)
         ]);
     } catch (err) {
         console.error('Erro ao deletar dados do usuário na nuvem:', err);
