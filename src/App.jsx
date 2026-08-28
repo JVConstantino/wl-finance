@@ -5198,23 +5198,23 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                 </button>
                             </div>
 
-                            {/* Ícone Pulsante de Microfone com Timer */}
-                            <div className="py-2">
+                            {/* Botão de Gravação Direta / Status */}
+                            <div className="py-1">
                                 <div className="relative inline-flex items-center justify-center">
                                     {isListeningVoice && (
                                         <>
-                                            <span className="absolute w-32 h-32 rounded-full bg-amber-400/20 animate-ping"></span>
-                                            <span className="absolute w-24 h-24 rounded-full bg-amber-500/30 animate-pulse"></span>
+                                            <span className="absolute w-28 h-28 rounded-full bg-amber-400/20 animate-ping"></span>
+                                            <span className="absolute w-20 h-20 rounded-full bg-amber-500/30 animate-pulse"></span>
                                         </>
                                     )}
                                     {isProcessingVoice && (
-                                        <span className="absolute w-28 h-28 rounded-full bg-blue-500/20 animate-spin border-2 border-dashed border-blue-500"></span>
+                                        <span className="absolute w-24 h-24 rounded-full bg-blue-500/20 animate-spin border-2 border-dashed border-blue-500"></span>
                                     )}
                                     <button
                                         type="button"
                                         onClick={isListeningVoice ? handleStopVoiceRecording : handleStartVoiceRecording}
                                         disabled={isProcessingVoice}
-                                        className={`w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl shadow-2xl transition-all relative z-10 ${
+                                        className={`w-16 h-16 rounded-full flex items-center justify-center text-white text-2xl shadow-xl transition-all relative z-10 ${
                                             isProcessingVoice
                                                 ? 'bg-blue-600'
                                                 : isListeningVoice
@@ -5223,75 +5223,108 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                         }`}
                                     >
                                         {isProcessingVoice ? (
-                                            <Loader2 size={32} className="animate-spin" />
+                                            <Loader2 size={26} className="animate-spin" />
                                         ) : isListeningVoice ? (
-                                            <Square size={28} className="fill-white" />
+                                            <Square size={22} className="fill-white" />
                                         ) : (
-                                            <Mic size={34} />
+                                            <Mic size={26} />
                                         )}
                                     </button>
                                 </div>
 
                                 {isListeningVoice && (
-                                    <div className="mt-3 flex items-center justify-center gap-1.5 text-xs font-black text-rose-500 animate-pulse">
+                                    <div className="mt-2 flex items-center justify-center gap-1.5 text-xs font-black text-rose-500 animate-pulse">
                                         <span className="w-2 h-2 rounded-full bg-rose-500"></span>
                                         <span>Gravando... 00:{recordingSeconds < 10 ? `0${recordingSeconds}` : recordingSeconds}</span>
                                     </div>
                                 )}
                             </div>
 
-                            {/* Texto de Status & Instrução */}
+                            {/* Título & Instrução com Dica do Teclado iOS */}
                             <div>
-                                <h3 className="text-lg font-black text-slate-800 dark:text-white mb-1">
+                                <h3 className="text-base font-black text-slate-800 dark:text-white mb-1">
                                     {isProcessingVoice
-                                        ? "FinBot IA ouvindo seu áudio..."
+                                        ? "FinBot IA analisando seu lançamento..."
                                         : isListeningVoice
-                                        ? "Gravando sua voz! Toque no quadrado vermelho para enviar"
-                                        : "Toque no microfone para falar"}
+                                        ? "Ouvindo sua voz! Toque no quadrado para enviar"
+                                        : "Fale ou Dite sua despesa/receita"}
                                 </h3>
-                                <p className="text-xs text-slate-400 px-4">
-                                    {isListeningVoice
-                                        ? 'Ex: "Gastei 45 reais na padaria no cartão pago por mim"'
-                                        : voiceTranscript
-                                        ? `"${voiceTranscript}"`
-                                        : "Fale o valor, onde gastou, a conta e quem pagou."}
+                                <p className="text-xs text-slate-400">
+                                    Fale o valor, local, forma de pagamento e quem pagou.
                                 </p>
                             </div>
 
-
-
-                            {/* Opção Alternativa: Digitação Rápida para a IA */}
-                            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 text-left">
-                                <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">
-                                    Ou digite a frase rápida para a IA:
-                                </label>
-                                <div className="flex gap-2">
-                                    <input
-                                        type="text"
+                            {/* Campo de Ditado / Digitação Rápida */}
+                            <div className="space-y-2 text-left">
+                                <div className="relative">
+                                    <textarea
+                                        rows={3}
                                         value={manualVoiceInput}
                                         onChange={(e) => setManualVoiceInput(e.target.value)}
-                                        placeholder="Ex: Abasteci 120 no posto pelo pix"
-                                        className="flex-1 text-xs font-medium text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl px-3.5 py-2.5 outline-none focus:ring-2 focus:ring-amber-500"
+                                        placeholder="Toque aqui e use o microfone 🎙️ do teclado do seu iPhone para ditar (ex: Gastei 45 no mercado no cartão pago por mim)"
+                                        className="w-full text-xs font-medium text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-amber-500 resize-none shadow-inner"
                                         onKeyDown={(e) => {
-                                            if (e.key === 'Enter' && manualVoiceInput.trim()) {
+                                            if (e.key === 'Enter' && !e.shiftKey && manualVoiceInput.trim()) {
                                                 e.preventDefault();
                                                 processVoiceExpenseWithAI(manualVoiceInput.trim());
                                             }
                                         }}
                                     />
-                                    <button
-                                        type="button"
-                                        disabled={!manualVoiceInput.trim() || isProcessingVoice}
-                                        onClick={() => {
-                                            if (manualVoiceInput.trim()) {
-                                                processVoiceExpenseWithAI(manualVoiceInput.trim());
-                                            }
-                                        }}
-                                        className="bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-xs font-black px-4 rounded-2xl transition flex items-center justify-center gap-1 shrink-0"
-                                    >
-                                        <Sparkles size={14} /> Enviar
-                                    </button>
                                 </div>
+
+                                {/* Dica amigável do iPhone */}
+                                <div className="p-2.5 bg-blue-50 dark:bg-blue-950/40 rounded-xl border border-blue-100 dark:border-blue-900/40 text-[11px] text-blue-700 dark:text-blue-300 flex items-start gap-2">
+                                    <span className="text-sm">💡</span>
+                                    <span>
+                                        <strong>Dica de ouro no iPhone:</strong> Ao tocar na caixinha acima, toque no ícone de <strong>Microfone 🎙️ no teclado do celular</strong> para falar por voz com máxima precisão!
+                                    </span>
+                                </div>
+
+                                {/* Exemplos Rápidos de Atalhos */}
+                                <div className="space-y-1 pt-1">
+                                    <span className="text-[10px] uppercase font-black text-slate-400">Exemplos para testar:</span>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {[
+                                            'Almoço 35 no débito pago por mim',
+                                            'Mercado 180 no crédito conjunto',
+                                            'Gasolina 100 no pix esposa',
+                                            'Salário 4500 conta principal'
+                                        ].map((ex, i) => (
+                                            <button
+                                                key={i}
+                                                type="button"
+                                                onClick={() => setManualVoiceInput(ex)}
+                                                className="text-[10px] font-bold bg-slate-100 dark:bg-slate-800 hover:bg-amber-100 dark:hover:bg-amber-950/60 text-slate-600 dark:text-slate-300 hover:text-amber-700 dark:hover:text-amber-300 px-2.5 py-1 rounded-lg transition"
+                                            >
+                                                {ex}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Botão Principal de Enviar para IA */}
+                                <button
+                                    type="button"
+                                    disabled={!manualVoiceInput.trim() || isProcessingVoice}
+                                    onClick={() => {
+                                        if (manualVoiceInput.trim()) {
+                                            processVoiceExpenseWithAI(manualVoiceInput.trim());
+                                        }
+                                    }}
+                                    className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 disabled:opacity-40 text-white text-xs font-black rounded-2xl shadow-lg shadow-amber-500/20 transition flex items-center justify-center gap-2 active:scale-95"
+                                >
+                                    {isProcessingVoice ? (
+                                        <>
+                                            <Loader2 size={16} className="animate-spin" />
+                                            <span>FinBot IA Processando...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Sparkles size={16} />
+                                            <span>Lançar com Inteligência Artificial</span>
+                                        </>
+                                    )}
+                                </button>
                             </div>
 
                             {/* Botão de Cancelar */}
@@ -5302,9 +5335,9 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                         handleStopVoiceRecording();
                                         setIsVoiceModalOpen(false);
                                     }}
-                                    className="w-full py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-xs rounded-2xl hover:bg-slate-200 transition"
+                                    className="w-full py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-bold text-xs rounded-xl hover:bg-slate-200 transition"
                                 >
-                                    Cancelar
+                                    Fechar
                                 </button>
                             </div>
                         </div>
