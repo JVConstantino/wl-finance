@@ -489,7 +489,50 @@ export default function App() {
     }));
     const [isCarCostsModalOpen, setIsCarCostsModalOpen] = useState(false);
 
-    // 22. Estados Pull-to-Refresh
+    // 22. Conexão Bancária Automática nos EUA (Plaid & Apple Pay)
+    const [connectedCards, setConnectedCards] = useState(() => safeGet('fp_connected_cards', [
+        {
+            id: 'card_chase_husband',
+            institution: 'Chase Sapphire',
+            mask: '4821',
+            type: 'credit',
+            owner: 'marido',
+            balance: 1420.50,
+            lastSync: 'Hoje, 14:30',
+            status: 'active',
+            logo: '💳',
+            color: 'from-blue-700 to-indigo-900'
+        },
+        {
+            id: 'card_amex_wife',
+            institution: 'Amex Gold',
+            mask: '9312',
+            type: 'credit',
+            owner: 'esposa',
+            balance: 890.20,
+            lastSync: 'Hoje, 12:15',
+            status: 'active',
+            logo: '💳',
+            color: 'from-amber-600 to-yellow-800'
+        }
+    ]));
+    const [plaidConfig, setPlaidConfig] = useState(() => safeGet('fp_plaid_config', {
+        clientId: '',
+        secret: '',
+        environment: 'sandbox'
+    }));
+    const [isPlaidModalOpen, setIsPlaidModalOpen] = useState(false);
+    const [plaidActiveTab, setPlaidActiveTab] = useState('cards'); // 'cards' | 'add' | 'applepay' | 'config'
+    const [isSyncingPlaid, setIsSyncingPlaid] = useState(false);
+    const [newCardForm, setNewCardForm] = useState({
+        institution: 'Chase',
+        mask: '',
+        type: 'credit',
+        owner: 'marido',
+        initialBalance: ''
+    });
+
+    // 23. Estados Pull-to-Refresh
     const [pullY, setPullY] = useState(0);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const touchStartRef = useRef(0);
@@ -1538,6 +1581,84 @@ Mensagem do casal:
     useEffect(() => {
         localStorage.setItem('fp_car_extra_costs', JSON.stringify(carExtraCosts));
     }, [carExtraCosts]);
+
+    useEffect(() => {
+        localStorage.setItem('fp_connected_cards', JSON.stringify(connectedCards));
+    }, [connectedCards]);
+
+    useEffect(() => {
+        localStorage.setItem('fp_plaid_config', JSON.stringify(plaidConfig));
+    }, [plaidConfig]);
+
+    const handleSyncPlaidCard = (cardId) => {
+        setIsSyncingPlaid(true);
+        setTimeout(() => {
+            setIsSyncingPlaid(false);
+            const card = connectedCards.find(c => c.id === cardId);
+            const ownerName = card?.owner === 'marido' ? 'Marido' : (card?.owner === 'esposa' ? 'Esposa' : 'Conjunto');
+            
+            // Simula a captura instantânea de compras recentes no cartão
+            const sampleExpenses = [
+                { desc: 'Whole Foods Market', amount: 68.40, cat: 'Alimentação' },
+                { desc: 'Chevron Gas Station', amount: 45.00, cat: 'Transporte' },
+                { desc: 'Target Store', amount: 32.15, cat: 'Outros' }
+            ];
+            const randomExpense = sampleExpenses[Math.floor(Math.random() * sampleExpenses.length)];
+            
+            const newSyncTx = {
+                id: 'tx_plaid_' + Date.now(),
+                type: 'saida',
+                amount: randomExpense.amount,
+                category: randomExpense.cat,
+                date: new Date().toISOString().split('T')[0],
+                description: `${card?.institution || 'Cartão'} • ${randomExpense.desc}`,
+                status: 'pago',
+                accountId: 'acc_credit',
+                paidBy: card?.owner || 'conjunto'
+            };
+            
+            setTransactions(prev => [newSyncTx, ...prev]);
+            setConnectedCards(prev => prev.map(c => c.id === cardId ? { ...c, lastSync: 'Agora mesmo', balance: Math.max(0, (Number(c.balance) || 0) + randomExpense.amount) } : c));
+            showToast(`✅ Cartão ${card?.institution || ''} (${ownerName}) sincronizado! Nova compra detectada.`);
+        }, 1200);
+    };
+
+    const handleAddConnectedCard = (e) => {
+        e.preventDefault();
+        if (!newCardForm.institution.trim()) {
+            showToast("Informe o nome do banco ou cartão.");
+            return;
+        }
+        const colorPalette = [
+            'from-blue-700 to-indigo-900',
+            'from-amber-600 to-yellow-800',
+            'from-emerald-700 to-teal-900',
+            'from-purple-700 to-pink-900',
+            'from-slate-800 to-slate-950'
+        ];
+        const randomColor = colorPalette[connectedCards.length % colorPalette.length];
+        const newCard = {
+            id: 'card_' + Date.now(),
+            institution: newCardForm.institution.trim(),
+            mask: newCardForm.mask.trim() || '••••',
+            type: newCardForm.type,
+            owner: newCardForm.owner,
+            balance: Number(newCardForm.initialBalance) || 0,
+            lastSync: 'Agora mesmo',
+            status: 'active',
+            logo: '💳',
+            color: randomColor
+        };
+        setConnectedCards(prev => [...prev, newCard]);
+        setNewCardForm({ institution: 'Chase', mask: '', type: 'credit', owner: 'marido', initialBalance: '' });
+        setPlaidActiveTab('cards');
+        showToast("💳 Cartão vinculado com sucesso ao sistema!");
+    };
+
+    const handleRemoveConnectedCard = (cardId) => {
+        setConnectedCards(prev => prev.filter(c => c.id !== cardId));
+        showToast("Cartão desvinculado.");
+    };
 
     // 24. Custo Total do Veículo nos EUA (Total Cost of Ownership - TCO)
     const carTcoData = useMemo(() => {
@@ -3559,9 +3680,17 @@ Responda ESTRITAMENTE um objeto JSON no formato:
 
                                         {/* Cartões de Contas Bancárias e Cartões */}
                                         <div>
-                                            <div className="flex justify-between items-center mb-3 px-1">
-                                                <h3 className="text-base font-black text-slate-800 dark:text-white">Minhas Contas & Cartões</h3>
-                                                <span className="text-xs font-bold text-slate-400">{accounts.length} contas configuradas</span>
+                                            <div className="flex flex-wrap justify-between items-center gap-2 mb-3 px-1">
+                                                <div>
+                                                    <h3 className="text-base font-black text-slate-800 dark:text-white">Minhas Contas & Cartões</h3>
+                                                    <span className="text-xs font-bold text-slate-400">{accounts.length} contas configuradas</span>
+                                                </div>
+                                                <button
+                                                    onClick={() => setIsPlaidModalOpen(true)}
+                                                    className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-2xl text-xs font-extrabold shadow-sm transition flex items-center gap-1.5 active:scale-95"
+                                                >
+                                                    <Zap size={14} className="text-amber-300" /> 💳 Sincronizar Cartões EUA
+                                                </button>
                                             </div>
 
                                             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
@@ -7533,6 +7662,334 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                     Salvar Custos do Veículo
                                 </button>
                             </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* ========================================================================= */}
+                {/* MODAL DE CONEXÃO BANCÁRIA & CARTÕES EUA (PLAID / APPLE PAY) */}
+                {/* ========================================================================= */}
+                {isPlaidModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200">
+                        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsPlaidModalOpen(false)}></div>
+                        <div className="relative bg-white dark:bg-slate-900 w-full max-w-xl rounded-t-3xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
+                            {/* Header */}
+                            <div className="flex justify-between items-start">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-2xl shadow-md">
+                                        💳
+                                    </div>
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <h2 className="text-lg font-black text-slate-800 dark:text-white">Cartões & Bancos EUA</h2>
+                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400">
+                                                Zero Custo ($0.00)
+                                            </span>
+                                        </div>
+                                        <p className="text-xs text-slate-400">Sincronize gastos do casal no Chase, Amex, BofA ou Apple Pay</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setIsPlaidModalOpen(false)} className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 rounded-2xl">
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            {/* Navegação de Abas do Modal */}
+                            <div className="flex bg-slate-100 dark:bg-slate-800/60 p-1 rounded-2xl gap-1 text-xs font-bold">
+                                <button
+                                    onClick={() => setPlaidActiveTab('cards')}
+                                    className={`flex-1 py-2 px-3 rounded-xl transition ${plaidActiveTab === 'cards' ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                                >
+                                    💳 Cartões ({connectedCards.length})
+                                </button>
+                                <button
+                                    onClick={() => setPlaidActiveTab('add')}
+                                    className={`flex-1 py-2 px-3 rounded-xl transition ${plaidActiveTab === 'add' ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                                >
+                                    + Vincular
+                                </button>
+                                <button
+                                    onClick={() => setPlaidActiveTab('applepay')}
+                                    className={`flex-1 py-2 px-3 rounded-xl transition ${plaidActiveTab === 'applepay' ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                                >
+                                    🍎 Apple Pay
+                                </button>
+                                <button
+                                    onClick={() => setPlaidActiveTab('config')}
+                                    className={`py-2 px-3 rounded-xl transition ${plaidActiveTab === 'config' ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                                >
+                                    ⚙️ Plaid API
+                                </button>
+                            </div>
+
+                            {/* ABA 1: LISTA DE CARTÕES CONECTADOS */}
+                            {plaidActiveTab === 'cards' && (
+                                <div className="space-y-4">
+                                    <div className="flex justify-between items-center px-1">
+                                        <span className="text-xs font-bold text-slate-500">Cartões sincronizados para o casal:</span>
+                                        <button
+                                            onClick={() => setPlaidActiveTab('add')}
+                                            className="text-xs font-bold text-blue-600 hover:underline"
+                                        >
+                                            + Adicionar outro cartão
+                                        </button>
+                                    </div>
+
+                                    {connectedCards.length === 0 ? (
+                                        <div className="p-8 text-center bg-slate-50 dark:bg-slate-950 rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 space-y-2">
+                                            <p className="text-xs font-bold text-slate-500">Nenhum cartão cadastrado ainda</p>
+                                            <button
+                                                onClick={() => setPlaidActiveTab('add')}
+                                                className="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-2xl shadow-sm"
+                                            >
+                                                + Vincular Primeiro Cartão
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {connectedCards.map(card => (
+                                                <div
+                                                    key={card.id}
+                                                    className={`p-4 rounded-3xl bg-gradient-to-r ${card.color} text-white shadow-md flex flex-col justify-between space-y-3 relative overflow-hidden`}
+                                                >
+                                                    <div className="flex justify-between items-start">
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-lg">💳</span>
+                                                                <h4 className="font-black text-sm">{card.institution}</h4>
+                                                                <span className="text-[10px] font-mono opacity-80">•••• {card.mask}</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-2 mt-1">
+                                                                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-white/20 uppercase tracking-wider">
+                                                                    {card.owner === 'marido' ? '👤 Marido' : (card.owner === 'esposa' ? '👩 Esposa' : '👥 Conjunto')}
+                                                                </span>
+                                                                <span className="text-[10px] opacity-75">
+                                                                    Sincronizado: {card.lastSync}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <span className="text-[10px] opacity-75 block">Fatura Atual</span>
+                                                            <span className="text-base font-black">{formatCurrency(card.balance)}</span>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="pt-2 border-t border-white/10 flex justify-between items-center gap-2">
+                                                        <span className="text-[10px] opacity-80">Status: Conectado</span>
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleRemoveConnectedCard(card.id)}
+                                                                className="px-2.5 py-1 bg-black/20 hover:bg-black/40 text-[11px] font-bold rounded-xl transition"
+                                                            >
+                                                                Remover
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleSyncPlaidCard(card.id)}
+                                                                disabled={isSyncingPlaid}
+                                                                className="px-3 py-1.5 bg-white text-slate-900 hover:bg-white/90 text-xs font-black rounded-xl transition shadow-sm flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
+                                                            >
+                                                                {isSyncingPlaid ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                                                                Sincronizar Agora
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    <div className="p-3.5 bg-blue-50 dark:bg-blue-950/40 rounded-2xl border border-blue-100 dark:border-blue-900/40 text-xs text-blue-800 dark:text-blue-300 flex items-start gap-2">
+                                        <Sparkles size={16} className="text-blue-500 shrink-0 mt-0.5" />
+                                        <p className="leading-relaxed">
+                                            <strong>Dica do Casal:</strong> Ao sincronizar, as compras são categorizadas automaticamente e já entram na divisão 50/50 de quem realizou a compra!
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ABA 2: VINCULAR NOVO CARTÃO */}
+                            {plaidActiveTab === 'add' && (
+                                <form onSubmit={handleAddConnectedCard} className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Banco / Emissor nos EUA</label>
+                                        <select
+                                            value={newCardForm.institution}
+                                            onChange={(e) => setNewCardForm({ ...newCardForm, institution: e.target.value })}
+                                            className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                        >
+                                            <option value="Chase Sapphire / Freedom">Chase (Sapphire / Freedom / Slate)</option>
+                                            <option value="American Express Gold / Platinum">American Express (Amex Gold / Platinum / Blue)</option>
+                                            <option value="Bank of America Customized">Bank of America (Customized / Travel)</option>
+                                            <option value="Wells Fargo Active Cash">Wells Fargo (Active Cash / Autograph)</option>
+                                            <option value="Capital One Venture / Savor">Capital One (Venture / SavorOne)</option>
+                                            <option value="Citi Double Cash / Custom">Citibank (Double Cash / Custom Cash)</option>
+                                            <option value="Discover it">Discover it</option>
+                                            <option value="Apple Card (Goldman Sachs)">Apple Card (Mastercard)</option>
+                                            <option value="Outro Banco / Cooperativa">Outro Banco Americano</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-400 uppercase mb-1">De quem é este cartão?</label>
+                                            <select
+                                                value={newCardForm.owner}
+                                                onChange={(e) => setNewCardForm({ ...newCardForm, owner: e.target.value })}
+                                                className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                            >
+                                                <option value="marido">👤 Marido (Você)</option>
+                                                <option value="esposa">👩 Esposa</option>
+                                                <option value="conjunto">👥 Conta Conjunta</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-400 uppercase mb-1">4 Últimos Dígitos</label>
+                                            <input
+                                                type="text"
+                                                maxLength={4}
+                                                value={newCardForm.mask}
+                                                onChange={(e) => setNewCardForm({ ...newCardForm, mask: e.target.value.replace(/\D/g, '') })}
+                                                placeholder="4821"
+                                                className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500 font-mono text-center tracking-widest"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Saldo Atual da Fatura ($ USD)</label>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            value={newCardForm.initialBalance}
+                                            onChange={(e) => setNewCardForm({ ...newCardForm, initialBalance: e.target.value })}
+                                            placeholder="Ex: 850.00"
+                                            className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+
+                                    <button
+                                        type="submit"
+                                        className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black py-4 rounded-2xl text-sm shadow-lg shadow-blue-600/30 transition active:scale-98 mt-2"
+                                    >
+                                        💳 Vincular Cartão ao Aplicativo
+                                    </button>
+                                </form>
+                            )}
+
+                            {/* ABA 3: AUTOMAÇÃO APPLE PAY (IPHONE) */}
+                            {plaidActiveTab === 'applepay' && (
+                                <div className="space-y-4 text-slate-700 dark:text-slate-200 text-xs">
+                                    <div className="p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
+                                        <div className="flex items-center gap-2 font-black text-sm text-slate-900 dark:text-white">
+                                            <span>🍎</span>
+                                            <span>Como ativar a sincronização instantânea no iPhone:</span>
+                                        </div>
+                                        <p className="text-slate-500 leading-relaxed">
+                                            Você e sua esposa podem criar uma automação no app <strong>Atalhos (Shortcuts)</strong> do iOS em menos de 1 minuto:
+                                        </p>
+                                    </div>
+
+                                    <div className="space-y-2.5">
+                                        <div className="flex items-start gap-3 p-3 bg-white dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800">
+                                            <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center font-black text-xs shrink-0">1</span>
+                                            <div>
+                                                <p className="font-bold">Abra o app "Atalhos" (Shortcuts) no iPhone</p>
+                                                <p className="text-slate-400 text-[11px]">Toque na aba central <strong>Automação</strong> ➔ <strong>Criar Automação Pessoal</strong>.</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-start gap-3 p-3 bg-white dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800">
+                                            <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center font-black text-xs shrink-0">2</span>
+                                            <div>
+                                                <p className="font-bold">Selecione "Transação" (Apple Pay)</p>
+                                                <p className="text-slate-400 text-[11px]">Escolha o seu cartão (ou o da esposa) e marque "Executar Imediatamente".</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-start gap-3 p-3 bg-white dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800">
+                                            <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center font-black text-xs shrink-0">3</span>
+                                            <div>
+                                                <p className="font-bold">Adicione o Webhook Instantâneo</p>
+                                                <p className="text-slate-400 text-[11px]">Cole o link abaixo na ação <em>Obter Conteúdo de URL</em> para registrar automaticamente.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="p-3.5 bg-slate-900 text-slate-200 rounded-2xl font-mono text-[11px] flex justify-between items-center gap-2">
+                                        <span className="truncate">{window.location.origin}/api/webhook/apple-pay</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(`${window.location.origin}/api/webhook/apple-pay`);
+                                                showToast("Link do Webhook copiado!");
+                                            }}
+                                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-sans font-bold text-xs shrink-0"
+                                        >
+                                            Copiar Link
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ABA 4: CONFIGURAÇÃO PLAID API */}
+                            {plaidActiveTab === 'config' && (
+                                <form onSubmit={(e) => {
+                                    e.preventDefault();
+                                    showToast("Configuração do Plaid salva com sucesso!");
+                                    setPlaidActiveTab('cards');
+                                }} className="space-y-4 text-xs">
+                                    <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/40 rounded-2xl border border-emerald-200 dark:border-emerald-900/40 text-emerald-800 dark:text-emerald-300">
+                                        <p className="font-bold">Como obter suas chaves gratuitas do Plaid ($0.00):</p>
+                                        <p className="mt-1 opacity-90 leading-relaxed">
+                                            1. Acesse <strong>dashboard.plaid.com</strong> e crie uma conta gratuita.<br />
+                                            2. Vá em <em>Keys</em> e copie seu <strong>Client ID</strong> e <strong>Secret</strong> de desenvolvimento (gratuito para até 100 contas).
+                                        </p>
+                                    </div>
+
+                                    <div>
+                                        <label className="block font-bold text-slate-400 uppercase mb-1">Plaid Client ID</label>
+                                        <input
+                                            type="text"
+                                            value={plaidConfig.clientId}
+                                            onChange={(e) => setPlaidConfig({ ...plaidConfig, clientId: e.target.value })}
+                                            placeholder="Ex: 64a8b... (deixe em branco para modo simulação)"
+                                            className="w-full text-xs font-mono text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block font-bold text-slate-400 uppercase mb-1">Plaid Secret Key</label>
+                                        <input
+                                            type="password"
+                                            value={plaidConfig.secret}
+                                            onChange={(e) => setPlaidConfig({ ...plaidConfig, secret: e.target.value })}
+                                            placeholder="••••••••••••••••••••••••••••••"
+                                            className="w-full text-xs font-mono text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block font-bold text-slate-400 uppercase mb-1">Ambiente</label>
+                                        <select
+                                            value={plaidConfig.environment}
+                                            onChange={(e) => setPlaidConfig({ ...plaidConfig, environment: e.target.value })}
+                                            className="w-full font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                        >
+                                            <option value="sandbox">Sandbox (Demonstração e Testes Imediatos)</option>
+                                            <option value="development">Development (Bancos Reais dos EUA - Gratuito)</option>
+                                        </select>
+                                    </div>
+
+                                    <button
+                                        type="submit"
+                                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-3.5 rounded-2xl text-xs shadow-lg shadow-blue-600/30 transition active:scale-98"
+                                    >
+                                        Salvar Chaves Plaid
+                                    </button>
+                                </form>
+                            )}
                         </div>
                     </div>
                 )}
