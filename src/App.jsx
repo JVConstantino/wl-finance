@@ -1784,6 +1784,46 @@ Mensagem do casal:
         showToast("Cartão desvinculado.");
     };
 
+    const handleResetAllData = () => {
+        if (!window.confirm("⚠️ ATENÇÃO: Deseja apagar todos os lançamentos, cartões, financiamentos e metas de exemplo para começar a usar o aplicativo do zero com suas informações reais?")) {
+            return;
+        }
+
+        setTransactions([]);
+        setRepeatingRules([]);
+        setFinancings([]);
+        setSavingsGoals([]);
+        setShoppingItems([]);
+        setConnectedCards([]);
+        setMonthlyGoals({});
+        setChatMessages([{
+            id: 'msg_welcome_fresh',
+            sender: 'bot',
+            text: 'Olá! Sou o FinBot IA, seu copiloto financeiro. O aplicativo foi zerado com sucesso e está pronto para o seu dia a dia real!',
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }]);
+        setAccounts([
+            { id: 'acc_main', name: 'Conta Principal', type: 'banco', color: 'from-blue-600 to-indigo-800' },
+            { id: 'acc_credit', name: 'Cartão de Crédito', type: 'credito', color: 'from-rose-500 to-pink-700' },
+            { id: 'acc_wallet', name: 'Carteira / Dinheiro', type: 'dinheiro', color: 'from-emerald-500 to-teal-700' }
+        ]);
+
+        localStorage.setItem('fp_transactions', JSON.stringify([]));
+        localStorage.setItem('fp_rules', JSON.stringify([]));
+        localStorage.setItem('fp_financings', JSON.stringify([]));
+        localStorage.setItem('fp_savings_goals', JSON.stringify([]));
+        localStorage.setItem('fp_shopping_items', JSON.stringify([]));
+        localStorage.setItem('fp_connected_cards', JSON.stringify([]));
+        localStorage.setItem('fp_goals', JSON.stringify({}));
+        localStorage.setItem('fp_accounts', JSON.stringify([
+            { id: 'acc_main', name: 'Conta Principal', type: 'banco', color: 'from-blue-600 to-indigo-800' },
+            { id: 'acc_credit', name: 'Cartão de Crédito', type: 'credito', color: 'from-rose-500 to-pink-700' },
+            { id: 'acc_wallet', name: 'Carteira / Dinheiro', type: 'dinheiro', color: 'from-emerald-500 to-teal-700' }
+        ]));
+
+        showToast("✨ Aplicativo 100% zerado! Comece cadastrando seus dados reais.");
+    };
+
     // 24. Custo Total do Veículo nos EUA (Total Cost of Ownership - TCO)
     const carTcoData = useMemo(() => {
         const vehicleFinancings = (financings || []).filter(f => f.type === 'veiculo' && (Number(f.totalInstallments) || 0) > (Number(f.paidInstallments) || 0));
@@ -3292,6 +3332,13 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                 {geminiApiKey ? <span className="text-[10px] bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 px-2 py-0.5 rounded-full font-extrabold">Ativo</span> : null}
                             </button>
 
+                            <button
+                                onClick={handleResetAllData}
+                                className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl font-bold text-xs text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                            >
+                                <Trash2 size={16} className="text-rose-500" /> Zerar Dados & Começar do Zero
+                            </button>
+
                             {isInstallable && (
                                 <button
                                     onClick={handleInstallPWA}
@@ -3700,6 +3747,17 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                             🇧🇷 Real (R$)
                                         </button>
                                     </div>
+                                </div>
+
+                                {/* RESET / COMEÇAR DO ZERO */}
+                                <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                                    <button
+                                        type="button"
+                                        onClick={() => { setShowProfileMenu(false); handleResetAllData(); }}
+                                        className="w-full flex items-center justify-center gap-2 px-3 py-2.5 text-xs font-black text-rose-500 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 rounded-xl transition"
+                                    >
+                                        <Trash2 size={15} /> Zerar Dados & Começar do Zero
+                                    </button>
                                 </div>
 
                             </div>
