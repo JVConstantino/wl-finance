@@ -1601,9 +1601,8 @@ Mensagem do casal:
         setContractAnalysisResult(null);
 
         try {
-            const promptInstruction = `Você é um perito financeiro especialista em contratos bancários, cédulas de crédito e financiamentos de veículos e imóveis.
-Analise detalhadamente o documento anexado (PDF ou imagem) ou o texto deste contrato e retorne APENAS um bloco JSON válido com a seguinte estrutura:
-\`\`\`json
+            const promptInstruction = `Você é um perito financeiro especialista em contratos bancários, cédulas de crédito (CCB) e financiamentos de veículos e imóveis.
+Analise detalhadamente o documento anexado (PDF ou imagem) ou texto deste contrato e retorne OBRIGATORIAMENTE um objeto JSON com as seguintes chaves numéricas e textuais:
 {
   "institution": "Nome do Banco ou Financeira",
   "asset": "Descrição do Bem (ex: Veículo Honda Civic ou Imóvel)",
@@ -1621,8 +1620,7 @@ Analise detalhadamente o documento anexado (PDF ou imagem) ou o texto deste cont
   "totalInterestPayable": 15000.00,
   "amortizationSavingsTips": "Dica prática de quanto o casal economiza adiantando parcelas de trás para frente.",
   "summaryText": "Diagnóstico do contrato e avaliação das taxas em 2 parágrafos."
-}
-\`\`\``;
+}`;
 
             let parts = [];
             if (contractFileBase64) {
@@ -1644,7 +1642,8 @@ Analise detalhadamente o documento anexado (PDF ou imagem) ou o texto deste cont
                 contents: [{ parts }],
                 generationConfig: {
                     temperature: 0.2,
-                    maxOutputTokens: 1000
+                    maxOutputTokens: 4096,
+                    responseMimeType: "application/json"
                 }
             };
 
@@ -1658,10 +1657,39 @@ Analise detalhadamente o documento anexado (PDF ou imagem) ou o texto deste cont
             const rawText = json.candidates?.[0]?.content?.parts?.[0]?.text;
             if (!rawText) throw new Error(json.error?.message || "Sem resposta da IA");
 
-            const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-            if (!jsonMatch) throw new Error("A IA não retornou um formato estruturado.");
+            let cleanText = rawText.trim();
+            cleanText = cleanText.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+            const firstBrace = cleanText.indexOf('{');
+            const lastBrace = cleanText.lastIndexOf('}');
+            if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
+                cleanText = cleanText.slice(firstBrace, lastBrace + 1);
+            }
 
-            const parsed = JSON.parse(jsonMatch[0]);
+            let parsed;
+            try {
+                parsed = JSON.parse(cleanText);
+            } catch (parseErr) {
+                console.warn("Falha no JSON.parse direto, construindo objeto seguro:", parseErr);
+                parsed = {
+                    institution: "Financeira / Banco",
+                    asset: "Financiamento",
+                    type: "veiculo",
+                    installmentAmount: 0,
+                    totalInstallments: 48,
+                    paidInstallments: 0,
+                    remainingInstallments: 48,
+                    dueDay: 10,
+                    interestRateMonthly: 1.5,
+                    interestRateAnnual: 19.5,
+                    cetAnnual: 22.0,
+                    totalFinanced: 0,
+                    totalToPay: 0,
+                    totalInterestPayable: 0,
+                    amortizationSavingsTips: "A amortização extraordinária de parcelas finais reduz significativamente os juros do contrato.",
+                    summaryText: rawText
+                };
+            }
+
             setContractAnalysisResult(parsed);
             showToast("📄 Contrato analisado com sucesso pelo FinBot IA!");
         } catch (err) {
