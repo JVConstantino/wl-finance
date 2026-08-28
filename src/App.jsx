@@ -279,6 +279,7 @@ export default function App() {
     const mediaRecorderRef = useRef(null);
     const audioChunksRef = useRef([]);
     const recordingTimerRef = useRef(null);
+    const audioFileInputRef = useRef(null);
 
     // 14. Relatório Executivo para Impressão / PDF
     const [isReportModalOpen, setIsReportModalOpen] = useState(false);
@@ -1245,14 +1246,12 @@ Estruture a resposta com tópicos claros usando emojis:
             }, 1000);
 
         } catch (err) {
-            console.error('Erro ao abrir microfone:', err);
+            console.warn('getUserMedia não disponível no iOS Standalone PWA, acionando gravador nativo:', err);
             setIsListeningVoice(false);
-            if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-                showToast("Permissão de microfone bloqueada. Libere nas permissões do site!");
-            } else if (err.message === 'NO_MEDIA_DEVICES') {
-                showToast("Abra o app no Chrome ou Safari para liberar o microfone!");
+            if (audioFileInputRef.current) {
+                audioFileInputRef.current.click();
             } else {
-                showToast("Microfone não disponível neste navegador. Você pode digitar abaixo!");
+                showToast("Você pode gravar pelo gravador do celular ou digitar a frase!");
             }
         }
     };
@@ -5174,6 +5173,33 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                         ? `"${voiceTranscript}"`
                                         : "Fale o valor, onde gastou, a conta e quem pagou."}
                                 </p>
+                            </div>
+
+                            {/* Input oculto para gravação nativa de áudio (compatível com iPhone PWA / Tela de Início) */}
+                            <input
+                                ref={audioFileInputRef}
+                                type="file"
+                                accept="audio/*"
+                                capture="microphone"
+                                className="hidden"
+                                onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) {
+                                        processAudioBlobWithAI(file);
+                                    }
+                                    e.target.value = '';
+                                }}
+                            />
+
+                            {/* Botão de Gravação Nativa (100% compatível com iOS Tela de Início) */}
+                            <div className="space-y-2">
+                                <button
+                                    type="button"
+                                    onClick={() => audioFileInputRef.current?.click()}
+                                    className="w-full py-2.5 px-3 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-800 dark:text-amber-300 font-black text-xs rounded-2xl border border-amber-200 dark:border-amber-800 transition flex items-center justify-center gap-2"
+                                >
+                                    <Mic size={15} /> 🎙️ Gravar pelo Gravador do Celular / iPhone
+                                </button>
                             </div>
 
                             {/* Opção Alternativa: Digitação Rápida para a IA */}
