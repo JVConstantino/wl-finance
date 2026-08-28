@@ -20,7 +20,8 @@ import {
     syncUpsertAccount, syncDeleteAccount, syncUpsertRule, syncDeleteRule,
     syncUpsertGoal, syncUpsertCategory, syncDeleteCategory, migrateAllLocalData,
     fetchUserFamily, joinOrCreateFamily, leaveFamily,
-    syncUpsertSavingsGoal, syncDeleteSavingsGoal, syncUpsertShoppingItem, syncDeleteShoppingItem
+    syncUpsertSavingsGoal, syncDeleteSavingsGoal, syncUpsertShoppingItem, syncDeleteShoppingItem,
+    deleteAllUserCloudData
 } from './lib/supabase';
 
 // Configurações Base
@@ -552,27 +553,29 @@ export default function App() {
             setIsCloudSyncing(true);
             const cloudData = await fetchAllUserData();
             if (cloudData) {
-                if (cloudData.transactions && cloudData.transactions.length > 0) {
-                    setTransactions(cloudData.transactions);
-                }
-                if (cloudData.accounts && cloudData.accounts.length > 0) {
-                    setAccounts(cloudData.accounts);
-                }
-                if (cloudData.repeatingRules && cloudData.repeatingRules.length > 0) {
-                    setRepeatingRules(cloudData.repeatingRules);
-                }
-                if (cloudData.monthlyGoals && Object.keys(cloudData.monthlyGoals).length > 0) {
-                    setMonthlyGoals(cloudData.monthlyGoals);
-                }
-                if (cloudData.customCategories && cloudData.customCategories.length > 0) {
-                    setCustomCategories(cloudData.customCategories);
-                }
-                if (cloudData.savingsGoals && cloudData.savingsGoals.length > 0) {
-                    setSavingsGoals(cloudData.savingsGoals);
-                }
-                if (cloudData.shoppingItems && cloudData.shoppingItems.length > 0) {
-                    setShoppingItems(cloudData.shoppingItems);
-                }
+                const cloudTxs = cloudData.transactions || [];
+                const cloudAccs = (cloudData.accounts && cloudData.accounts.length > 0) ? cloudData.accounts : defaultAccounts;
+                const cloudRules = cloudData.repeatingRules || [];
+                const cloudGoals = cloudData.monthlyGoals || {};
+                const cloudCats = cloudData.customCategories || [];
+                const cloudSavings = cloudData.savingsGoals || [];
+                const cloudShopping = cloudData.shoppingItems || [];
+
+                setTransactions(cloudTxs);
+                setAccounts(cloudAccs);
+                setRepeatingRules(cloudRules);
+                setMonthlyGoals(cloudGoals);
+                setCustomCategories(cloudCats);
+                setSavingsGoals(cloudSavings);
+                setShoppingItems(cloudShopping);
+
+                localStorage.setItem('fp_transactions', JSON.stringify(cloudTxs));
+                localStorage.setItem('fp_accounts', JSON.stringify(cloudAccs));
+                localStorage.setItem('fp_rules', JSON.stringify(cloudRules));
+                localStorage.setItem('fp_goals', JSON.stringify(cloudGoals));
+                localStorage.setItem('fp_custom_categories', JSON.stringify(cloudCats));
+                localStorage.setItem('fp_savings_goals', JSON.stringify(cloudSavings));
+                localStorage.setItem('fp_shopping_items', JSON.stringify(cloudShopping));
             }
             // Buscar dados da família / casal
             try {
@@ -1813,7 +1816,7 @@ Mensagem do casal:
         showToast("Cartão desvinculado.");
     };
 
-    const handleResetAllData = () => {
+    const handleResetAllData = async () => {
         if (!window.confirm("⚠️ ATENÇÃO: Deseja apagar todos os lançamentos, cartões, financiamentos e metas de exemplo para começar a usar o aplicativo do zero com suas informações reais?")) {
             return;
         }
@@ -1850,7 +1853,23 @@ Mensagem do casal:
             { id: 'acc_wallet', name: 'Carteira / Dinheiro', type: 'dinheiro', color: 'from-emerald-500 to-teal-700' }
         ]));
 
-        showToast("✨ Aplicativo 100% zerado! Comece cadastrando seus dados reais.");
+        if (supabaseUser) {
+            try {
+                await deleteAllUserCloudData(supabaseUser.id);
+                const baseAccs = [
+                    { id: 'acc_main', name: 'Conta Principal', type: 'banco', color: 'from-blue-600 to-indigo-800' },
+                    { id: 'acc_credit', name: 'Cartão de Crédito', type: 'credito', color: 'from-rose-500 to-pink-700' },
+                    { id: 'acc_wallet', name: 'Carteira / Dinheiro', type: 'dinheiro', color: 'from-emerald-500 to-teal-700' }
+                ];
+                for (const acc of baseAccs) {
+                    await syncUpsertAccount(acc, supabaseUser.id, activeFamilyCode);
+                }
+            } catch (errCloud) {
+                console.error('Erro ao zerar dados na nuvem:', errCloud);
+            }
+        }
+
+        showToast("✨ Aplicativo e Nuvem 100% zerados! Comece cadastrando seus dados reais.");
     };
 
     // 24. Custo Total do Veículo nos EUA (Total Cost of Ownership - TCO)

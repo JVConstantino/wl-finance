@@ -633,3 +633,21 @@ export const migrateAllLocalData = async (localData, userId, familyId) => {
         await supabase.from('transactions').upsert(txPayload);
     }
 };
+
+export const deleteAllUserCloudData = async (userId) => {
+    const supabase = getSupabase();
+    if (!supabase || !userId) return;
+    try {
+        await Promise.allSettled([
+            supabase.from('transactions').delete().eq('user_id', userId),
+            supabase.from('accounts').delete().eq('user_id', userId),
+            supabase.from('repeating_rules').delete().eq('user_id', userId),
+            supabase.from('monthly_goals').delete().eq('user_id', userId),
+            supabase.from('savings_goals').delete().eq('user_id', userId),
+            supabase.from('shopping_items').delete().eq('user_id', userId),
+            supabase.from('custom_categories').delete().eq('user_id', userId)
+        ]);
+    } catch (err) {
+        console.error('Erro ao deletar dados do usuário na nuvem:', err);
+    }
+};
