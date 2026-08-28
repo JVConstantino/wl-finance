@@ -9,7 +9,7 @@ import {
     CalendarDays, MessageSquare, Send, Users, Camera, Moon, Sun,
     Wifi, History, Sparkles, Activity, ArrowRightLeft, Key, Check, Info,
     Download, ShieldCheck, Layers, ChevronDown, Database, LogIn, LogOut, RefreshCw,
-    Lock, Unlock, Shield, Heart, Copy
+    Lock, Unlock, Shield, Heart, Copy, ShoppingCart, PiggyBank, Bell, CheckSquare, Square, Flame
 } from 'lucide-react';
 import {
     getSupabase, getSupabaseConfig, saveSupabaseConfig, clearSupabaseConfig,
@@ -17,9 +17,9 @@ import {
     fetchAllUserData, syncUpsertTransaction, syncDeleteTransaction,
     syncUpsertAccount, syncDeleteAccount, syncUpsertRule, syncDeleteRule,
     syncUpsertGoal, syncUpsertCategory, syncDeleteCategory, migrateAllLocalData,
-    fetchUserFamily, joinOrCreateFamily, leaveFamily
+    fetchUserFamily, joinOrCreateFamily, leaveFamily,
+    syncUpsertSavingsGoal, syncDeleteSavingsGoal, syncUpsertShoppingItem, syncDeleteShoppingItem
 } from './lib/supabase';
-
 
 // Configurações Base
 const baseCategories = {
@@ -41,6 +41,18 @@ const defaultAccounts = [
     { id: 'acc_main', name: 'Conta Principal', type: 'banco', color: 'from-blue-600 to-indigo-800' },
     { id: 'acc_wallet', name: 'Carteira Física', type: 'dinheiro', color: 'from-emerald-500 to-teal-700' },
     { id: 'acc_credit', name: 'Cartão de Crédito', type: 'credito', color: 'from-rose-500 to-pink-700' }
+];
+
+const initialSampleSavingsGoals = [
+    { id: 'sg_1', title: 'Viagem de Férias', targetAmount: 12000, currentAmount: 4800, deadline: '2027-01-15', icon: '🏖️', color: 'from-amber-500 to-orange-600' },
+    { id: 'sg_2', title: 'Reserva de Emergência', targetAmount: 20000, currentAmount: 11500, deadline: '2026-12-31', icon: '🛡️', color: 'from-emerald-600 to-teal-700' },
+    { id: 'sg_3', title: 'Reforma do Apê', targetAmount: 15000, currentAmount: 3200, deadline: '2026-11-30', icon: '🛋️', color: 'from-purple-600 to-pink-600' }
+];
+
+const initialSampleShoppingItems = [
+    { id: 'shop_1', name: 'Leite desnatado', quantity: '3 un', estimatedPrice: 16.50, completed: false, category: 'Laticínios', addedBy: 'esposa' },
+    { id: 'shop_2', name: 'Café em grãos', quantity: '1 pct', estimatedPrice: 28.00, completed: true, category: 'Mercearia', addedBy: 'marido' },
+    { id: 'shop_3', name: 'Frutas da semana', quantity: '1 saco', estimatedPrice: 35.00, completed: false, category: 'Hortifruti', addedBy: 'conjunto' }
 ];
 
 const initialSampleTransactions = [
@@ -230,7 +242,26 @@ export default function App() {
     const [newPinInput, setNewPinInput] = useState('');
     const [confirmPinInput, setConfirmPinInput] = useState('');
 
-    // 8. Estados Pull-to-Refresh
+    // 8. Cofrinhos & Sonhos do Casal
+    const [savingsGoals, setSavingsGoals] = useState(() => safeGet('fp_savings_goals', initialSampleSavingsGoals));
+    const [isSavingsModalOpen, setIsSavingsModalOpen] = useState(false);
+    const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
+    const [selectedSavingsGoal, setSelectedSavingsGoal] = useState(null);
+    const [depositActionType, setDepositActionType] = useState('deposit'); // 'deposit' | 'withdraw'
+    const [savingsDepositInput, setSavingsDepositInput] = useState('');
+    const [newGoalData, setNewGoalData] = useState({ title: '', targetAmount: '', currentAmount: '0', deadline: '', icon: '🎯', color: 'from-blue-600 to-indigo-600' });
+
+    // 9. Lista de Mercado / Compras Compartilhada
+    const [shoppingItems, setShoppingItems] = useState(() => safeGet('fp_shopping_items', initialSampleShoppingItems));
+    const [isShoppingModalOpen, setIsShoppingModalOpen] = useState(false);
+    const [newShopItem, setNewShopItem] = useState({ name: '', quantity: '1 un', estimatedPrice: '', category: 'Geral', addedBy: 'conjunto' });
+
+    // 10. Diagnóstico Mensal com IA
+    const [isAiDiagnosisOpen, setIsAiDiagnosisOpen] = useState(false);
+    const [aiDiagnosisText, setAiDiagnosisText] = useState('');
+    const [isGeneratingDiagnosis, setIsGeneratingDiagnosis] = useState(false);
+
+    // 11. Estados Pull-to-Refresh
     const [pullY, setPullY] = useState(0);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const touchStartRef = useRef(0);
@@ -264,6 +295,12 @@ export default function App() {
                 }
                 if (cloudData.customCategories && cloudData.customCategories.length > 0) {
                     setCustomCategories(cloudData.customCategories);
+                }
+                if (cloudData.savingsGoals && cloudData.savingsGoals.length > 0) {
+                    setSavingsGoals(cloudData.savingsGoals);
+                }
+                if (cloudData.shoppingItems && cloudData.shoppingItems.length > 0) {
+                    setShoppingItems(cloudData.shoppingItems);
                 }
             }
             // Buscar dados da família / casal
@@ -663,6 +700,14 @@ export default function App() {
     }, [accounts]);
 
     useEffect(() => {
+        localStorage.setItem('fp_savings_goals', JSON.stringify(savingsGoals));
+    }, [savingsGoals]);
+
+    useEffect(() => {
+        localStorage.setItem('fp_shopping_items', JSON.stringify(shoppingItems));
+    }, [shoppingItems]);
+
+    useEffect(() => {
         localStorage.setItem('fp_theme', JSON.stringify(isDarkMode));
         if (isDarkMode) {
             document.documentElement.classList.add('dark');
@@ -798,6 +843,205 @@ export default function App() {
         })).sort((a, b) => b.amount - a.amount);
         return { data, total: totalInvested, history: allInvestments };
     }, [transactions, allCategoryColors]);
+
+    // 5. Alerta de Contas a Vencer no Topo (Anti-Juros)
+    const upcomingDueBills = useMemo(() => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const in7Days = new Date(today);
+        in7Days.setDate(in7Days.getDate() + 7);
+
+        return monthlyTransactions.filter(t => {
+            if (t.type !== 'saida' || t.status !== 'pendente') return false;
+            const tDate = new Date((t.date || '') + 'T12:00:00');
+            return !isNaN(tDate.getTime()) && tDate <= in7Days;
+        });
+    }, [monthlyTransactions]);
+
+    const totalUpcomingDue = useMemo(() => {
+        return upcomingDueBills.reduce((acc, curr) => acc + curr.amount, 0);
+    }, [upcomingDueBills]);
+
+    const pendingShoppingCount = useMemo(() => {
+        return shoppingItems.filter(i => !i.completed).length;
+    }, [shoppingItems]);
+
+    // Handlers para Cofrinhos & Sonhos do Casal
+    const handleSaveSavingsGoal = (e) => {
+        e.preventDefault();
+        const targetAmt = parseFloat(newGoalData.targetAmount);
+        const currentAmt = parseFloat(newGoalData.currentAmount) || 0;
+        if (!newGoalData.title.trim() || isNaN(targetAmt) || targetAmt <= 0) {
+            showToast("Preencha o título e um valor alvo válido.");
+            return;
+        }
+
+        const newGoal = {
+            id: 'sg_' + Date.now(),
+            title: newGoalData.title.trim(),
+            targetAmount: targetAmt,
+            currentAmount: currentAmt,
+            deadline: newGoalData.deadline || null,
+            icon: newGoalData.icon || '🎯',
+            color: newGoalData.color || 'from-blue-600 to-indigo-600'
+        };
+
+        setSavingsGoals(prev => [newGoal, ...prev]);
+        if (supabaseUser) {
+            syncUpsertSavingsGoal(newGoal, supabaseUser.id, activeFamilyCode);
+        }
+        setNewGoalData({ title: '', targetAmount: '', currentAmount: '0', deadline: '', icon: '🎯', color: 'from-blue-600 to-indigo-600' });
+        setIsSavingsModalOpen(false);
+        showToast("Novo cofrinho criado com sucesso!");
+    };
+
+    const handleDepositToSavingsGoal = (e) => {
+        e.preventDefault();
+        if (!selectedSavingsGoal) return;
+        const val = parseFloat(savingsDepositInput);
+        if (isNaN(val) || val <= 0) {
+            showToast("Digite um valor válido.");
+            return;
+        }
+
+        const delta = depositActionType === 'withdraw' ? -val : val;
+        const updatedGoal = {
+            ...selectedSavingsGoal,
+            currentAmount: Math.max(0, (selectedSavingsGoal.currentAmount || 0) + delta)
+        };
+
+        setSavingsGoals(prev => prev.map(g => g.id === updatedGoal.id ? updatedGoal : g));
+        if (supabaseUser) {
+            syncUpsertSavingsGoal(updatedGoal, supabaseUser.id, activeFamilyCode);
+        }
+        setIsDepositModalOpen(false);
+        setSavingsDepositInput('');
+        showToast(depositActionType === 'withdraw' ? `Resgate de ${formatCurrency(val)} realizado!` : `Depósito de ${formatCurrency(val)} guardado no cofrinho! 🎉`);
+    };
+
+    const handleDeleteSavingsGoal = (id) => {
+        setSavingsGoals(prev => prev.filter(g => g.id !== id));
+        if (supabaseUser) {
+            syncDeleteSavingsGoal(id, supabaseUser.id);
+        }
+        showToast("Cofrinho removido.");
+    };
+
+    // Handlers para Lista de Mercado Compartilhada
+    const handleAddShoppingItem = (e) => {
+        e.preventDefault();
+        if (!newShopItem.name.trim()) return;
+
+        const newItem = {
+            id: 'shop_' + Date.now(),
+            name: newShopItem.name.trim(),
+            quantity: newShopItem.quantity || '1 un',
+            estimatedPrice: parseFloat(newShopItem.estimatedPrice) || 0,
+            completed: false,
+            category: newShopItem.category || 'Geral',
+            addedBy: newShopItem.addedBy || 'conjunto'
+        };
+
+        setShoppingItems(prev => [newItem, ...prev]);
+        if (supabaseUser) {
+            syncUpsertShoppingItem(newItem, supabaseUser.id, activeFamilyCode);
+        }
+        setNewShopItem({ name: '', quantity: '1 un', estimatedPrice: '', category: 'Geral', addedBy: 'conjunto' });
+        showToast(`"${newItem.name}" adicionado à lista!`);
+    };
+
+    const handleToggleShoppingItem = (id) => {
+        setShoppingItems(prev => prev.map(item => {
+            if (item.id === id) {
+                const updated = { ...item, completed: !item.completed };
+                if (supabaseUser) {
+                    syncUpsertShoppingItem(updated, supabaseUser.id, activeFamilyCode);
+                }
+                return updated;
+            }
+            return item;
+        }));
+        if (navigator.vibrate) {
+            try { navigator.vibrate(15); } catch(e) {}
+        }
+    };
+
+    const handleDeleteShoppingItem = (id) => {
+        setShoppingItems(prev => prev.filter(i => i.id !== id));
+        if (supabaseUser) {
+            syncDeleteShoppingItem(id, supabaseUser.id);
+        }
+    };
+
+    const handleCheckoutShoppingToTransactions = () => {
+        const totalSpent = shoppingItems.reduce((acc, curr) => acc + (curr.estimatedPrice || 0), 0);
+        setIsShoppingModalOpen(false);
+        setFormData({
+            type: 'saida',
+            amount: totalSpent > 0 ? totalSpent.toString() : '',
+            category: 'Alimentação',
+            date: new Date().toISOString().split('T')[0],
+            description: `Compras de Supermercado (${shoppingItems.length} itens)`,
+            status: 'pago',
+            isRepeating: false,
+            accountId: 'acc_main',
+            paidBy: 'conjunto'
+        });
+        setIsFormOpen(true);
+    };
+
+    // Handler para Diagnóstico Mensal com IA (Gemini 3.6 Flash)
+    const handleGenerateAiDiagnosis = async () => {
+        if (!geminiApiKey.trim()) {
+            showToast("Configure sua chave Gemini no FinBot primeiro.");
+            setIsApiKeyModalOpen(true);
+            return;
+        }
+
+        setIsGeneratingDiagnosis(true);
+        setIsAiDiagnosisOpen(true);
+        try {
+            const currentMonthName = currentDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+            const promptText = `Você é o FinBot, consultor financeiro pessoal e do casal. Analise os seguintes dados do mês de ${currentMonthName} e gere um diagnóstico completo, elegante, direto, profissional e acolhedor em Português do Brasil:
+- Total Receitas: R$ ${totals.receitas.toFixed(2)}
+- Total Despesas: R$ ${totals.despesas.toFixed(2)}
+- Total Investimentos: R$ ${totals.investimentos.toFixed(2)}
+- Saldo Líquido do Mês: R$ ${(totals.receitas - totals.despesas).toFixed(2)}
+- Taxa de Poupança: ${totals.receitas > 0 ? (((totals.receitas - totals.despesas) / totals.receitas) * 100).toFixed(1) : 0}%
+- Top Categorias de Gastos: ${(analysisData.data || []).slice(0, 5).map(c => `${c.name}: R$ ${c.amount.toFixed(2)} (${c.percentage.toFixed(1)}%)`).join(', ')}
+- Cofrinhos e Metas do Casal: ${savingsGoals.map(g => `${g.title}: R$ ${g.currentAmount} de R$ ${g.targetAmount}`).join(', ')}
+
+Estruture a resposta com tópicos claros usando emojis:
+1. 🏆 **Destaques & Conquistas do Casal** (aproveitamento do orçamento e percentual guardado)
+2. ⚠️ **Pontos de Atenção** (gastos mais elevados e onde economizar)
+3. 💡 **3 Ações Práticas para o Próximo Mês**
+4. 🎯 **Evolução dos Cofrinhos & Sonhos**`;
+
+            const payload = {
+                contents: [{ parts: [{ text: promptText }] }],
+                generationConfig: { temperature: 0.3 }
+            };
+
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${geminiApiKey.trim()}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const json = await res.json();
+            if (!res.ok || json.error) {
+                throw new Error(json.error?.message || `Erro ${res.status}`);
+            }
+
+            const text = json.candidates?.[0]?.content?.parts?.[0]?.text || "Diagnóstico gerado com sucesso!";
+            setAiDiagnosisText(text);
+        } catch (err) {
+            console.error(err);
+            setAiDiagnosisText(`Erro ao gerar diagnóstico: ${err.message || 'Verifique a chave Gemini.'}`);
+        } finally {
+            setIsGeneratingDiagnosis(false);
+        }
+    };
 
     const formatCurrency = (value) => {
         return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
@@ -1579,6 +1823,18 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                 </div>
 
                                 <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => setIsShoppingModalOpen(true)}
+                                        className="relative p-2 bg-white/20 hover:bg-white/30 rounded-full text-white text-xs font-bold flex items-center justify-center transition backdrop-blur-md border border-white/20"
+                                        title="Lista de Compras / Mercado"
+                                    >
+                                        <ShoppingCart size={17} />
+                                        {pendingShoppingCount > 0 && (
+                                            <span className="absolute -top-1 -right-1 bg-amber-400 text-slate-950 text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow-md animate-pulse">
+                                                {pendingShoppingCount}
+                                            </span>
+                                        )}
+                                    </button>
                                     {isInstallable && (
                                         <button
                                             onClick={handleInstallPWA}
@@ -1612,6 +1868,20 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
 
                             {/* Controles de Mês & Ações */}
                             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                                {/* Botão Lista de Mercado Desktop */}
+                                <button
+                                    onClick={() => setIsShoppingModalOpen(true)}
+                                    className="hidden sm:flex items-center gap-2 bg-white/15 hover:bg-white/25 backdrop-blur-md px-3.5 py-2.5 rounded-2xl text-xs font-extrabold border border-white/20 transition shadow-sm relative"
+                                    title="Lista de Compras Compartilhada"
+                                >
+                                    <ShoppingCart size={16} /> Lista de Mercado
+                                    {pendingShoppingCount > 0 && (
+                                        <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full">
+                                            {pendingShoppingCount}
+                                        </span>
+                                    )}
+                                </button>
+
                                 {/* Seletor de Mês */}
                                 <div className="flex items-center bg-white/15 backdrop-blur-md p-1 rounded-2xl border border-white/20 shadow-inner">
                                     <button
@@ -1749,6 +2019,26 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                         )}
                                     </button>
                                     <button
+                                        onClick={() => { setShowProfileMenu(false); setIsShoppingModalOpen(true); }}
+                                        className="w-full flex items-center justify-between px-3 py-2 text-xs font-bold rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <ShoppingCart size={16} className="text-amber-500" />
+                                            Lista de Mercado
+                                        </span>
+                                        {pendingShoppingCount > 0 && (
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded font-extrabold bg-amber-100 dark:bg-amber-950 text-amber-600">
+                                                {pendingShoppingCount} itens
+                                            </span>
+                                        )}
+                                    </button>
+                                    <button
+                                        onClick={() => { setShowProfileMenu(false); setIsSavingsModalOpen(true); }}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                                    >
+                                        <PiggyBank size={16} className="text-amber-500" /> Cofrinhos & Sonhos
+                                    </button>
+                                    <button
                                         onClick={() => { setShowProfileMenu(false); setIsCategoryManagerOpen(true); }}
                                         className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
                                     >
@@ -1768,6 +2058,32 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
 
                     {/* CORPO DO DASHBOARD / TELAS */}
                     <div className="max-w-7xl w-full mx-auto px-4 sm:px-8 -mt-12 lg:-mt-4">
+
+                        {/* BANNER DE CONTAS A VENCER NO TOPO (ANTI-JUROS) */}
+                        {upcomingDueBills.length > 0 && (
+                            <div className="mb-4 bg-gradient-to-r from-amber-500/15 via-rose-500/15 to-amber-500/15 dark:from-amber-950/40 dark:via-rose-950/40 dark:to-amber-950/40 border border-amber-300 dark:border-amber-700/60 rounded-3xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm backdrop-blur-md">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-amber-500/30 animate-bounce">
+                                        <Bell size={20} />
+                                    </div>
+                                    <div>
+                                        <p className="text-xs sm:text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                                            <span>⚠️ {upcomingDueBills.length} {upcomingDueBills.length === 1 ? 'conta vence' : 'contas vencem'} em breve</span>
+                                            <span className="text-rose-600 dark:text-rose-400 font-extrabold">({formatCurrency(totalUpcomingDue)})</span>
+                                        </p>
+                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                                            Evite multas e juros mantendo os pagamentos em dia.
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setFilterType('pendentes')}
+                                    className="w-full sm:w-auto px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-black rounded-2xl shadow-sm transition flex items-center justify-center gap-1.5 shrink-0"
+                                >
+                                    <CheckCircle2 size={15} /> Ver & Pagar
+                                </button>
+                            </div>
+                        )}
 
                         {/* ========================================================= */}
                         {/* 4 CARDS DE KPIS EXECUTIVOS (RECEITAS, DESPESAS, INVESTIMENTOS, SALDO) */}
@@ -2146,6 +2462,95 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                             </p>
                                         </div>
 
+                                        {/* CARD DE COFRINHOS & SONHOS DO CASAL */}
+                                        <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-100 dark:border-slate-800/80">
+                                            <div className="flex justify-between items-center mb-4">
+                                                <div>
+                                                    <h3 className="text-sm font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                                        <PiggyBank size={18} className="text-amber-500" /> Cofrinhos & Sonhos do Casal
+                                                    </h3>
+                                                    <p className="text-[11px] text-slate-400 font-medium">Metas e economias conjuntas</p>
+                                                </div>
+                                                <button
+                                                    onClick={() => setIsSavingsModalOpen(true)}
+                                                    className="text-[11px] font-extrabold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 py-1.5 px-2.5 rounded-xl transition flex items-center gap-1"
+                                                >
+                                                    <Plus size={13} /> Novo
+                                                </button>
+                                            </div>
+
+                                            <div className="space-y-3">
+                                                {savingsGoals.length === 0 ? (
+                                                    <div className="text-center py-6 text-slate-400 text-xs font-medium">
+                                                        Nenhum cofrinho criado ainda. Clique em "+ Novo" para planejar uma viagem, reserva ou sonho a dois!
+                                                    </div>
+                                                ) : (
+                                                    savingsGoals.map(goal => {
+                                                        const percent = Math.min(100, Math.round(((goal.currentAmount || 0) / (goal.targetAmount || 1)) * 100));
+                                                        const remaining = Math.max(0, (goal.targetAmount || 0) - (goal.currentAmount || 0));
+
+                                                        return (
+                                                            <div
+                                                                key={goal.id}
+                                                                className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 transition hover:border-amber-200 dark:hover:border-amber-900/50 group"
+                                                            >
+                                                                <div className="flex items-center justify-between mb-2">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-xl">{goal.icon || '🎯'}</span>
+                                                                        <div>
+                                                                            <h4 className="text-xs font-black text-slate-800 dark:text-white leading-tight">{goal.title}</h4>
+                                                                            <p className="text-[10px] text-slate-400">
+                                                                                Meta: {formatCurrency(goal.targetAmount)} {goal.deadline ? `• até ${new Date(goal.deadline + 'T12:00:00').toLocaleDateString('pt-BR')}` : ''}
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="text-right">
+                                                                        <span className="text-xs font-black text-slate-900 dark:text-white">{formatCurrency(goal.currentAmount)}</span>
+                                                                        <span className="text-[10px] font-black text-amber-500 block">{percent}%</span>
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Barra de Progresso */}
+                                                                <div className="w-full bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden mb-2.5">
+                                                                    <div
+                                                                        className={`h-full rounded-full transition-all duration-500 bg-gradient-to-r ${goal.color || 'from-amber-500 to-orange-500'}`}
+                                                                        style={{ width: `${percent}%` }}
+                                                                    ></div>
+                                                                </div>
+
+                                                                <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800/60 text-[10px]">
+                                                                    <span className="text-slate-400 font-medium">
+                                                                        {remaining === 0 ? '🎉 Meta Conquistada!' : `Faltam ${formatCurrency(remaining)}`}
+                                                                    </span>
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <button
+                                                                            onClick={() => { setSelectedSavingsGoal(goal); setDepositActionType('deposit'); setSavingsDepositInput(''); setIsDepositModalOpen(true); }}
+                                                                            className="px-2 py-0.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 font-black hover:bg-emerald-200 transition"
+                                                                        >
+                                                                            + Guardar
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => { setSelectedSavingsGoal(goal); setDepositActionType('withdraw'); setSavingsDepositInput(''); setIsDepositModalOpen(true); }}
+                                                                            className="px-2 py-0.5 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-black hover:bg-slate-300 transition"
+                                                                        >
+                                                                            Resgatar
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => handleDeleteSavingsGoal(goal.id)}
+                                                                            className="p-1 text-slate-400 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition"
+                                                                            title="Excluir Cofrinho"
+                                                                        >
+                                                                            <Trash2 size={12} />
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })
+                                                )}
+                                            </div>
+                                        </div>
+
                                     </div>
 
                                 </div>
@@ -2157,6 +2562,34 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                         {/* ========================================================= */}
                         {activeTab === 'analise' && (
                             <div className="animate-in fade-in duration-300 space-y-6">
+                                {/* BANNER DE DIAGNÓSTICO INTELIGENTE COM IA */}
+                                <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-3xl p-5 sm:p-6 text-white shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                                    <div className="flex items-center gap-3.5">
+                                        <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center backdrop-blur-md shrink-0">
+                                            <Sparkles size={24} className="text-amber-300 animate-pulse" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-base font-black tracking-tight">Diagnóstico Mensal do Casal com FinBot IA</h3>
+                                            <p className="text-xs text-blue-100 font-medium">Análise executiva de fluxo, metas e dicas práticas com IA para o casal</p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={handleGenerateAiDiagnosis}
+                                        disabled={isGeneratingDiagnosis}
+                                        className="w-full sm:w-auto px-5 py-3 bg-white text-slate-900 font-black text-xs rounded-2xl shadow-md hover:bg-blue-50 transition active:scale-95 flex items-center justify-center gap-2 shrink-0"
+                                    >
+                                        {isGeneratingDiagnosis ? (
+                                            <>
+                                                <Loader2 size={16} className="animate-spin text-blue-600" /> Analisando Finanças...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Sparkles size={16} className="text-amber-500" /> Gerar Diagnóstico com IA
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+
                                 <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2">
                                     <button
                                         onClick={() => setAnalysisView('mes')}
@@ -3380,6 +3813,326 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                     )}
                                 </div>
                             </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* 1. Modal Criar / Editar Cofrinho */}
+                {isSavingsModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+                        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsSavingsModalOpen(false)}></div>
+                        <div className="relative bg-white dark:bg-slate-900 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-full duration-300">
+                            <div className="flex justify-between items-center mb-6">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center">
+                                        <PiggyBank size={22} />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-black text-slate-800 dark:text-white">Novo Cofrinho</h2>
+                                        <p className="text-xs text-slate-400">Planeje um sonho ou meta do casal</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setIsSavingsModalOpen(false)} className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 rounded-2xl">
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            <form onSubmit={handleSaveSavingsGoal} className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Nome do Sonho / Cofrinho</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={newGoalData.title}
+                                        onChange={(e) => setNewGoalData({ ...newGoalData, title: e.target.value })}
+                                        placeholder="Ex: Viagem para a Europa, Carro Novo"
+                                        className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-amber-500"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Valor Alvo (R$)</label>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            required
+                                            value={newGoalData.targetAmount}
+                                            onChange={(e) => setNewGoalData({ ...newGoalData, targetAmount: e.target.value })}
+                                            placeholder="15000"
+                                            className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-amber-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Já Guardado (R$)</label>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            value={newGoalData.currentAmount}
+                                            onChange={(e) => setNewGoalData({ ...newGoalData, currentAmount: e.target.value })}
+                                            placeholder="0"
+                                            className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-amber-500"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Ícone</label>
+                                        <select
+                                            value={newGoalData.icon}
+                                            onChange={(e) => setNewGoalData({ ...newGoalData, icon: e.target.value })}
+                                            className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-amber-500"
+                                        >
+                                            <option value="🏖️">🏖️ Viagem</option>
+                                            <option value="🛡️">🛡️ Emergência</option>
+                                            <option value="🚗">🚗 Carro / Moto</option>
+                                            <option value="🛋️">🛋️ Reforma / Casa</option>
+                                            <option value="💍">💍 Casamento / Festa</option>
+                                            <option value="👶">👶 Família / Filhos</option>
+                                            <option value="💻">💻 Eletrônicos</option>
+                                            <option value="🎯">🎯 Outro Sonho</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Data Alvo (Opcional)</label>
+                                        <input
+                                            type="date"
+                                            value={newGoalData.deadline}
+                                            onChange={(e) => setNewGoalData({ ...newGoalData, deadline: e.target.value })}
+                                            className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-amber-500"
+                                        />
+                                    </div>
+                                </div>
+
+                                <button
+                                    type="submit"
+                                    className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-black py-4 rounded-2xl text-sm shadow-lg shadow-amber-500/25 transition active:scale-98 mt-2"
+                                >
+                                    Criar Cofrinho
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* 2. Modal Depositar / Resgatar no Cofrinho */}
+                {isDepositModalOpen && selectedSavingsGoal && (
+                    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+                        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsDepositModalOpen(false)}></div>
+                        <div className="relative bg-white dark:bg-slate-900 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-full duration-300">
+                            <div className="flex justify-between items-center mb-6">
+                                <div className="flex items-center gap-3">
+                                    <div className="text-2xl">{selectedSavingsGoal.icon || '🎯'}</div>
+                                    <div>
+                                        <h2 className="text-xl font-black text-slate-800 dark:text-white">{selectedSavingsGoal.title}</h2>
+                                        <p className="text-xs text-slate-400">
+                                            Saldo atual: {formatCurrency(selectedSavingsGoal.currentAmount)}
+                                        </p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setIsDepositModalOpen(false)} className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 rounded-2xl">
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            {/* Seletor Depositar vs Resgatar */}
+                            <div className="grid grid-cols-2 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-2xl mb-6">
+                                <button
+                                    type="button"
+                                    onClick={() => setDepositActionType('deposit')}
+                                    className={`py-2.5 text-xs font-black rounded-xl transition ${depositActionType === 'deposit' ? 'bg-emerald-500 text-white shadow-sm' : 'text-slate-500'}`}
+                                >
+                                    + Guardar Dinheiro
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setDepositActionType('withdraw')}
+                                    className={`py-2.5 text-xs font-black rounded-xl transition ${depositActionType === 'withdraw' ? 'bg-slate-900 text-white shadow-sm dark:bg-slate-700' : 'text-slate-500'}`}
+                                >
+                                    - Resgatar Dinheiro
+                                </button>
+                            </div>
+
+                            <form onSubmit={handleDepositToSavingsGoal} className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">
+                                        Valor a {depositActionType === 'deposit' ? 'Guardar' : 'Resgatar'} (R$)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        required
+                                        autoFocus
+                                        value={savingsDepositInput}
+                                        onChange={(e) => setSavingsDepositInput(e.target.value)}
+                                        placeholder="0,00"
+                                        className="w-full text-center text-3xl font-black text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 outline-none focus:ring-2 focus:ring-amber-500"
+                                    />
+                                </div>
+
+                                <button
+                                    type="submit"
+                                    className={`w-full text-white font-black py-4 rounded-2xl text-sm shadow-lg transition active:scale-98 ${depositActionType === 'deposit' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/25' : 'bg-slate-800 hover:bg-slate-900 shadow-slate-800/25'}`}
+                                >
+                                    Confirmar {depositActionType === 'deposit' ? 'Aporte' : 'Resgate'}
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* 3. Modal Lista de Mercado Compartilhada */}
+                {isShoppingModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+                        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsShoppingModalOpen(false)}></div>
+                        <div className="relative bg-white dark:bg-slate-900 w-full max-w-lg rounded-t-3xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-full duration-300 max-h-[90vh] flex flex-col">
+                            <div className="flex justify-between items-center mb-4 shrink-0">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center">
+                                        <ShoppingCart size={22} />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-black text-slate-800 dark:text-white">Lista de Mercado</h2>
+                                        <p className="text-xs text-slate-400">Sincronizada em tempo real para o casal</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setIsShoppingModalOpen(false)} className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 rounded-2xl">
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            {/* Formulário de Adicionar Item Rápido */}
+                            <form onSubmit={handleAddShoppingItem} className="flex gap-2 mb-4 shrink-0">
+                                <input
+                                    type="text"
+                                    required
+                                    value={newShopItem.name}
+                                    onChange={(e) => setNewShopItem({ ...newShopItem, name: e.target.value })}
+                                    placeholder="Ex: Leite integral, Arroz, Pão..."
+                                    className="flex-1 text-xs font-bold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3 outline-none focus:ring-2 focus:ring-amber-500"
+                                />
+                                <input
+                                    type="text"
+                                    value={newShopItem.quantity}
+                                    onChange={(e) => setNewShopItem({ ...newShopItem, quantity: e.target.value })}
+                                    placeholder="Qtd"
+                                    className="w-16 text-xs font-bold text-center text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3 outline-none"
+                                />
+                                <button
+                                    type="submit"
+                                    className="px-4 bg-amber-500 hover:bg-amber-600 text-white font-black rounded-xl text-xs shadow-md transition shrink-0"
+                                >
+                                    <Plus size={16} />
+                                </button>
+                            </form>
+
+                            {/* Lista de Itens */}
+                            <div className="flex-1 overflow-y-auto space-y-2 pr-1 my-2 min-h-48">
+                                {shoppingItems.length === 0 ? (
+                                    <div className="text-center py-10 text-slate-400 text-xs font-medium">
+                                        Sua lista de compras está vazia! Adicione itens acima para não esquecer nada no supermercado.
+                                    </div>
+                                ) : (
+                                    shoppingItems.map(item => (
+                                        <div
+                                            key={item.id}
+                                            className={`p-3 rounded-2xl border transition flex items-center justify-between gap-3 ${item.completed ? 'bg-slate-50/50 dark:bg-slate-950/30 border-slate-100 dark:border-slate-900 opacity-60' : 'bg-white dark:bg-slate-800/80 border-slate-100 dark:border-slate-700 shadow-sm'}`}
+                                        >
+                                            <div className="flex items-center gap-3 min-w-0 cursor-pointer flex-1" onClick={() => handleToggleShoppingItem(item.id)}>
+                                                <button
+                                                    type="button"
+                                                    className={`w-5 h-5 rounded-lg border flex items-center justify-center shrink-0 transition ${item.completed ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300 dark:border-slate-600'}`}
+                                                >
+                                                    {item.completed && <Check size={14} />}
+                                                </button>
+                                                <div className="min-w-0">
+                                                    <p className={`text-xs font-bold truncate ${item.completed ? 'line-through text-slate-400' : 'text-slate-800 dark:text-white'}`}>
+                                                        {item.name}
+                                                    </p>
+                                                    <span className="text-[10px] text-slate-400 font-medium">{item.quantity}</span>
+                                                </div>
+                                            </div>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => handleDeleteShoppingItem(item.id)}
+                                                className="p-1 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition shrink-0"
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+
+                            {/* Rodapé com Total e Botão de Finalizar no Finanças */}
+                            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 shrink-0 space-y-2">
+                                <button
+                                    type="button"
+                                    onClick={handleCheckoutShoppingToTransactions}
+                                    className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black py-3.5 rounded-2xl text-xs shadow-lg shadow-emerald-600/25 transition active:scale-98 flex items-center justify-center gap-2"
+                                >
+                                    <CheckCircle2 size={16} /> Finalizar Compras & Lançar Despesa
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* 4. Modal Diagnóstico Mensal com IA */}
+                {isAiDiagnosisOpen && (
+                    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+                        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsAiDiagnosisOpen(false)}></div>
+                        <div className="relative bg-white dark:bg-slate-900 w-full max-w-xl rounded-t-3xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-full duration-300 max-h-[90vh] flex flex-col">
+                            <div className="flex justify-between items-center mb-4 shrink-0">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center">
+                                        <Sparkles size={22} />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-black text-slate-800 dark:text-white">Diagnóstico FinBot IA</h2>
+                                        <p className="text-xs text-slate-400">Resumo executivo e recomendações financeiras</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setIsAiDiagnosisOpen(false)} className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 rounded-2xl">
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto pr-1 my-2 bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                                {isGeneratingDiagnosis ? (
+                                    <div className="flex flex-col items-center justify-center py-12 space-y-3 text-slate-500">
+                                        <Loader2 size={32} className="animate-spin text-indigo-600" />
+                                        <p className="text-xs font-bold">O Gemini 3.6 Flash está analisando os dados do casal...</p>
+                                    </div>
+                                ) : (
+                                    <div className="text-xs font-medium text-slate-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">
+                                        {aiDiagnosisText}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 shrink-0 flex gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        navigator.clipboard.writeText(aiDiagnosisText);
+                                        showToast("Diagnóstico copiado para a área de transferência!");
+                                    }}
+                                    className="flex-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-black py-3 rounded-2xl text-xs transition flex items-center justify-center gap-1.5"
+                                >
+                                    <Copy size={14} /> Copiar Diagnóstico
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleGenerateAiDiagnosis}
+                                    disabled={isGeneratingDiagnosis}
+                                    className="px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-black py-3 rounded-2xl text-xs transition flex items-center justify-center gap-1.5"
+                                >
+                                    <RefreshCw size={14} className={isGeneratingDiagnosis ? 'animate-spin' : ''} /> Recalcular
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}

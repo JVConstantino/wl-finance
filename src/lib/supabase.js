@@ -47,7 +47,6 @@ export const saveSupabaseConfig = (url, key) => {
 
     if (cleanUrl) localStorage.setItem('fp_supabase_url', cleanUrl);
     if (cleanKey) localStorage.setItem('fp_supabase_anon_key', cleanKey);
-    // Recarregar cliente
     initSupabase();
 };
 
@@ -244,13 +243,17 @@ export const fetchAllUserData = async () => {
         { data: accs, error: errAcc },
         { data: rules, error: errRules },
         { data: goals, error: errGoals },
-        { data: cats, error: errCats }
+        { data: cats, error: errCats },
+        { data: savings, error: errSavings },
+        { data: shopping, error: errShopping }
     ] = await Promise.all([
         supabase.from('transactions').select('*').order('date', { ascending: false }),
         supabase.from('accounts').select('*').order('created_at', { ascending: true }),
         supabase.from('repeating_rules').select('*').order('day', { ascending: true }),
         supabase.from('monthly_goals').select('*'),
-        supabase.from('custom_categories').select('*')
+        supabase.from('custom_categories').select('*'),
+        supabase.from('savings_goals').select('*').order('created_at', { ascending: true }),
+        supabase.from('shopping_items').select('*').order('created_at', { ascending: false })
     ]);
 
     if (errTx) console.error('Erro ao buscar transações:', errTx);
@@ -258,6 +261,8 @@ export const fetchAllUserData = async () => {
     if (errRules) console.error('Erro ao buscar regras:', errRules);
     if (errGoals) console.error('Erro ao buscar metas:', errGoals);
     if (errCats) console.error('Erro ao buscar categorias:', errCats);
+    if (errSavings) console.warn('Aviso ao buscar cofrinhos (tabela criada recentemente):', errSavings);
+    if (errShopping) console.warn('Aviso ao buscar lista de compras:', errShopping);
 
     // Mapear formato das transações para compatibilidade
     const formattedTransactions = (txs || []).map(t => ({
@@ -304,12 +309,34 @@ export const fetchAllUserData = async () => {
         color: c.color || '#3b82f6'
     }));
 
+    const formattedSavings = (savings || []).map(s => ({
+        id: s.id,
+        title: s.title,
+        targetAmount: Number(s.target_amount),
+        currentAmount: Number(s.current_amount || 0),
+        deadline: s.deadline || null,
+        icon: s.icon || '🎯',
+        color: s.color || 'from-blue-600 to-indigo-600'
+    }));
+
+    const formattedShopping = (shopping || []).map(item => ({
+        id: item.id,
+        name: item.name,
+        quantity: item.quantity || '1',
+        estimatedPrice: Number(item.estimated_price || 0),
+        completed: Boolean(item.completed),
+        category: item.category || 'Geral',
+        addedBy: item.added_by || 'conjunto'
+    }));
+
     return {
         transactions: formattedTransactions,
         accounts: formattedAccounts,
         repeatingRules: formattedRules,
         monthlyGoals: formattedGoals,
-        customCategories: formattedCategories
+        customCategories: formattedCategories,
+        savingsGoals: formattedSavings,
+        shoppingItems: formattedShopping
     };
 };
 
@@ -436,44 +463,98 @@ export const syncDeleteCategory = async (id, userId) => {
 };
 
 // ==============================================================================
-// MIGRAÇÃO LOCALSTORAGE -> NUVEM SUPABASE
+// COFRINHOS / CAIXINHAS & LISTA DE MERCADO
 // ==============================================================================
 
-export const migrateAllLocalData = async (data, userId, familyId, userEmail) => {
+export const syncUpsertSavingsGoal = async (goal, userId, familyId) => {
     const supabase = getSupabase();
-    if (!supabase || !userId) throw new Error('Supabase ou usuário não disponível');
+    if (!supabase || !userId) return;
 
-    const { transactions = [], accounts = [], repeatingRules = [], monthlyGoals = {}, customCategories = [] } = data;
+    const payload = {
+        id: goal.id,
+        user_id: userId,
+        family_id: familyId || null,
+        title: goal.title,
+        target_amount: Number(goal.targetAmount),
+        current_amount: Number(goal.currentAmount || 0),
+        deadline: goal.deadline || null,
+        icon: goal.icon || '🎯',
+        color: goal.color || 'from-blue-600 to-indigo-600'
+    };
 
-    // 1. Contas
+    const { error } = await supabase.from('savings_goals').upsert(payload);
+    if (error) console.error('Erro ao salvar cofrinho na nuvem:', error);
+};
+
+export const syncDeleteSavingsGoal = async (id, userId) => {
+    const supabase = getSupabase();
+    if (!supabase || !userId) return;
+    const { error } = await supabase.from('savings_goals').delete().eq('id', id);
+    if (error) console.error('Erro ao excluir cofrinho da nuvem:', error);
+};
+
+export const syncUpsertShoppingItem = async (item, userId, familyId) => {
+    const supabase = getSupabase();
+    if (!supabase || !userId) return;
+
+    const payload = {
+        id: item.id,
+        user_id: userId,
+        family_id: familyId || null,
+        name: item.name,
+        quantity: item.quantity || '1',
+        estimated_price: Number(item.estimatedPrice || 0),
+        completed: Boolean(item.completed),
+        category: item.category || 'Geral',
+        added_by: item.addedBy || 'conjunto'
+    };
+
+    const { error } = await supabase.from('shopping_items').upsert(payload);
+    if (error) console.error('Erro ao salvar item na lista:', error);
+};
+
+export const syncDeleteShoppingItem = async (id, userId) => {
+    const supabase = getSupabase();
+    if (!supabase || !userId) return;
+    const { error } = await supabase.from('shopping_items').delete().eq('id', id);
+    if (error) console.error('Erro ao excluir item da lista:', error);
+};
+
+export const migrateAllLocalData = async (localData, userId, familyId) => {
+    const supabase = getSupabase();
+    if (!supabase || !userId) throw new Error('Supabase não inicializado ou usuário não autenticado');
+
+    const { transactions = [], accounts = [], repeatingRules = [], monthlyGoals = {}, customCategories = [], savingsGoals = [], shoppingItems = [] } = localData;
+
+    // 1. Migrar Contas
     if (accounts.length > 0) {
-        const accPayloads = accounts.map(a => ({
+        const accountsPayload = accounts.map(a => ({
             id: a.id,
             user_id: userId,
             family_id: familyId || null,
             name: a.name,
             type: a.type,
-            color: a.color || ''
+            color: a.color || 'from-blue-600 to-indigo-800'
         }));
-        await supabase.from('accounts').upsert(accPayloads);
+        await supabase.from('accounts').upsert(accountsPayload);
     }
 
-    // 2. Categorias Personalizadas
+    // 2. Migrar Categorias
     if (customCategories.length > 0) {
-        const catPayloads = customCategories.map(c => ({
-            id: c.id,
+        const catsPayload = customCategories.map(c => ({
+            id: c.id || `cat_${Date.now()}_${Math.random()}`,
             user_id: userId,
             family_id: familyId || null,
             name: c.name,
             type: c.type,
             color: c.color || '#3b82f6'
         }));
-        await supabase.from('custom_categories').upsert(catPayloads);
+        await supabase.from('custom_categories').upsert(catsPayload);
     }
 
-    // 3. Regras Recorrentes
+    // 3. Migrar Regras Recorrentes
     if (repeatingRules.length > 0) {
-        const rulePayloads = repeatingRules.map(r => ({
+        const rulesPayload = repeatingRules.map(r => ({
             id: r.id,
             user_id: userId,
             family_id: familyId || null,
@@ -484,30 +565,62 @@ export const migrateAllLocalData = async (data, userId, familyId, userEmail) => 
             day: Number(r.day),
             account_id: r.accountId || 'acc_main'
         }));
-        await supabase.from('repeating_rules').upsert(rulePayloads);
+        await supabase.from('repeating_rules').upsert(rulesPayload);
     }
 
-    // 4. Metas
-    const goalEntries = Object.entries(monthlyGoals);
-    if (goalEntries.length > 0) {
-        const goalPayloads = goalEntries.map(([category, amount]) => ({
+    // 4. Migrar Metas
+    const goalsEntries = Object.entries(monthlyGoals);
+    if (goalsEntries.length > 0) {
+        const goalsPayload = goalsEntries.map(([category, amount]) => ({
             user_id: userId,
             family_id: familyId || null,
             category,
             amount: Number(amount),
             updated_at: new Date().toISOString()
         }));
-        await supabase.from('monthly_goals').upsert(goalPayloads, { onConflict: 'user_id, category' });
+        await supabase.from('monthly_goals').upsert(goalsPayload, { onConflict: 'user_id, category' });
     }
 
-    // 5. Transações
+    // 5. Migrar Cofrinhos
+    if (savingsGoals.length > 0) {
+        const savingsPayload = savingsGoals.map(s => ({
+            id: s.id,
+            user_id: userId,
+            family_id: familyId || null,
+            title: s.title,
+            target_amount: Number(s.targetAmount),
+            current_amount: Number(s.currentAmount || 0),
+            deadline: s.deadline || null,
+            icon: s.icon || '🎯',
+            color: s.color || 'from-blue-600 to-indigo-600'
+        }));
+        await supabase.from('savings_goals').upsert(savingsPayload);
+    }
+
+    // 6. Migrar Lista de Compras
+    if (shoppingItems.length > 0) {
+        const shopPayload = shoppingItems.map(item => ({
+            id: item.id,
+            user_id: userId,
+            family_id: familyId || null,
+            name: item.name,
+            quantity: item.quantity || '1',
+            estimated_price: Number(item.estimatedPrice || 0),
+            completed: Boolean(item.completed),
+            category: item.category || 'Geral',
+            added_by: item.addedBy || 'conjunto'
+        }));
+        await supabase.from('shopping_items').upsert(shopPayload);
+    }
+
+    // 7. Migrar Transações
     if (transactions.length > 0) {
-        const txPayloads = transactions.map(t => ({
+        const txPayload = transactions.map(t => ({
             id: t.id,
             user_id: userId,
             family_id: familyId || null,
             paid_by: t.paidBy || 'conjunto',
-            created_by_email: userEmail || null,
+            created_by_email: t.createdByEmail || null,
             type: t.type,
             amount: Number(t.amount),
             category: t.category,
@@ -517,8 +630,6 @@ export const migrateAllLocalData = async (data, userId, familyId, userEmail) => 
             account_id: t.accountId || 'acc_main',
             is_from_repeat_rule: t.isFromRepeatRule || null
         }));
-        await supabase.from('transactions').upsert(txPayloads);
+        await supabase.from('transactions').upsert(txPayload);
     }
-
-    return true;
 };

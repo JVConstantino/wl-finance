@@ -45,8 +45,6 @@ CREATE TABLE IF NOT EXISTS public.transactions (
     is_from_repeat_rule TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
-
--- Adicionar colunas caso a tabela já existisse antes
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS family_id TEXT;
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS paid_by TEXT DEFAULT 'conjunto';
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS created_by_email TEXT;
@@ -102,8 +100,38 @@ CREATE TABLE IF NOT EXISTS public.custom_categories (
 );
 ALTER TABLE public.custom_categories ADD COLUMN IF NOT EXISTS family_id TEXT;
 
+-- 8. TABELA DE COFRINHOS & METAS DE SONHOS DO CASAL
+CREATE TABLE IF NOT EXISTS public.savings_goals (
+    id TEXT PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL DEFAULT auth.uid(),
+    family_id TEXT,
+    title TEXT NOT NULL,
+    target_amount NUMERIC(12,2) NOT NULL,
+    current_amount NUMERIC(12,2) DEFAULT 0,
+    deadline DATE,
+    icon TEXT DEFAULT '🎯',
+    color TEXT DEFAULT 'from-blue-600 to-indigo-600',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+ALTER TABLE public.savings_goals ADD COLUMN IF NOT EXISTS family_id TEXT;
+
+-- 9. TABELA DE LISTA DE MERCADO / COMPRAS COMPARTILHADA
+CREATE TABLE IF NOT EXISTS public.shopping_items (
+    id TEXT PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL DEFAULT auth.uid(),
+    family_id TEXT,
+    name TEXT NOT NULL,
+    quantity TEXT DEFAULT '1',
+    estimated_price NUMERIC(12,2) DEFAULT 0,
+    completed BOOLEAN DEFAULT FALSE,
+    category TEXT DEFAULT 'Geral',
+    added_by TEXT DEFAULT 'conjunto',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+ALTER TABLE public.shopping_items ADD COLUMN IF NOT EXISTS family_id TEXT;
+
 -- ==============================================================================
--- ATIVAÇÃO DE ROW LEVEL SECURITY (RLS) - SEGURANÇA MULTI-DISPOSITIVO E CASAL
+-- ATIVAÇÃO DE ROW LEVEL SECURITY (RLS)
 -- ==============================================================================
 
 ALTER TABLE public.family_groups ENABLE ROW LEVEL SECURITY;
@@ -113,6 +141,8 @@ ALTER TABLE public.accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.repeating_rules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.monthly_goals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.custom_categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.savings_goals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.shopping_items ENABLE ROW LEVEL SECURITY;
 
 -- Políticas para FAMILY_GROUPS
 DROP POLICY IF EXISTS "Membros acessam seus grupos familiares" ON public.family_groups;
@@ -210,6 +240,32 @@ WITH CHECK (
     OR family_id IN (SELECT family_id FROM public.get_my_family_ids())
 );
 
+-- Políticas para SAVINGS_GOALS (Cofrinhos)
+DROP POLICY IF EXISTS "Usuários e familiares gerenciam cofrinhos" ON public.savings_goals;
+CREATE POLICY "Usuários e familiares gerenciam cofrinhos" 
+ON public.savings_goals FOR ALL 
+USING (
+    auth.uid() = user_id 
+    OR family_id IN (SELECT family_id FROM public.get_my_family_ids())
+) 
+WITH CHECK (
+    auth.uid() = user_id 
+    OR family_id IN (SELECT family_id FROM public.get_my_family_ids())
+);
+
+-- Políticas para SHOPPING_ITEMS (Lista de Mercado)
+DROP POLICY IF EXISTS "Usuários e familiares gerenciam lista de mercado" ON public.shopping_items;
+CREATE POLICY "Usuários e familiares gerenciam lista de mercado" 
+ON public.shopping_items FOR ALL 
+USING (
+    auth.uid() = user_id 
+    OR family_id IN (SELECT family_id FROM public.get_my_family_ids())
+) 
+WITH CHECK (
+    auth.uid() = user_id 
+    OR family_id IN (SELECT family_id FROM public.get_my_family_ids())
+);
+
 -- ==============================================================================
 -- ÍNDICES PARA PERFORMANCE MÁXIMA
 -- ==============================================================================
@@ -217,3 +273,5 @@ CREATE INDEX IF NOT EXISTS idx_transactions_user_family ON public.transactions(u
 CREATE INDEX IF NOT EXISTS idx_accounts_family ON public.accounts(user_id, family_id);
 CREATE INDEX IF NOT EXISTS idx_family_members_user ON public.family_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_family_members_family ON public.family_members(family_id);
+CREATE INDEX IF NOT EXISTS idx_savings_goals_family ON public.savings_goals(user_id, family_id);
+CREATE INDEX IF NOT EXISTS idx_shopping_items_family ON public.shopping_items(user_id, family_id);
