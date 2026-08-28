@@ -819,6 +819,21 @@ export default function App() {
         }, { receitas: 0, despesas: 0, investimentos: 0 });
     }, [monthlyTransactions]);
 
+    const monthlySummary = useMemo(() => {
+        const receitas = totals.receitas;
+        const despesas = totals.despesas;
+        const investimentos = totals.investimentos;
+        const saldoLiquido = receitas - despesas - investimentos;
+        const taxaPoupanca = receitas > 0 ? Math.max(0, ((receitas - despesas) / receitas) * 100) : 0;
+        return {
+            receitas,
+            despesas,
+            investimentos,
+            saldoLiquido,
+            taxaPoupanca
+        };
+    }, [totals]);
+
     const totalLiquidBalance = useMemo(() => {
         return Object.values(accountBalances).reduce((a, b) => a + b, 0);
     }, [accountBalances]);
