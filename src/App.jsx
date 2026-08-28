@@ -920,7 +920,9 @@ export default function App() {
         saveSupabaseConfig(configUrlInput, configKeyInput);
         setSupabaseConfigState(getSupabaseConfig());
         setIsCloudConfigModalOpen(false);
-        showToast('Supabase configurado com sucesso!');
+        setAuthMode('login');
+        setIsAuthModalOpen(true);
+        showToast('✅ Supabase configurado! Agora faça login ou crie sua conta.');
     };
 
     const handleMigrateToCloud = async () => {
@@ -6413,6 +6415,73 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                         ← Voltar para o Login
                                     </button>
                                 )}
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* Modal de Configuração do Supabase (URL e Anon Key) */}
+                {isCloudConfigModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+                        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsCloudConfigModalOpen(false)}></div>
+                        <div className="relative bg-white dark:bg-slate-900 w-full max-w-lg rounded-t-3xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-full duration-300">
+                            <div className="flex justify-between items-center mb-6">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-2xl bg-blue-600/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                                        <Database size={22} />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-black text-slate-800 dark:text-white">Conectar Supabase</h2>
+                                        <p className="text-xs text-slate-400">Banco de Dados em Nuvem Seguro</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setIsCloudConfigModalOpen(false)} className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 rounded-2xl">
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            <form onSubmit={handleSaveCloudConfig} className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Project URL do Supabase</label>
+                                    <input
+                                        type="url"
+                                        required
+                                        value={configUrlInput}
+                                        onChange={(e) => setConfigUrlInput(e.target.value)}
+                                        placeholder="https://seu-projeto.supabase.co"
+                                        className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    <span className="text-[11px] text-slate-400 mt-1 block">Encontrado em: app.supabase.com ➔ Project Settings ➔ API</span>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Anon Public Key do Supabase</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={configKeyInput}
+                                        onChange={(e) => setConfigKeyInput(e.target.value)}
+                                        placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                                        className="w-full text-sm font-mono text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    <span className="text-[11px] text-slate-400 mt-1 block">Chave pública (anon/public) para leitura e gravação segura.</span>
+                                </div>
+
+                                <div className="pt-2 flex items-center gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsCloudConfigModalOpen(false)}
+                                        className="flex-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold py-3.5 rounded-2xl text-xs transition"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black py-3.5 rounded-2xl text-xs shadow-lg shadow-blue-600/25 transition"
+                                    >
+                                        Salvar e Conectar
+                                    </button>
+                                </div>
                             </form>
                         </div>
                     </div>
