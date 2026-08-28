@@ -10,7 +10,8 @@ import {
     Wifi, History, Sparkles, Activity, ArrowRightLeft, Key, Check, Info,
     Download, ShieldCheck, Layers, ChevronDown, Database, LogIn, LogOut, RefreshCw,
     Lock, Unlock, Shield, Heart, Copy, ShoppingCart, PiggyBank, Bell, CheckSquare, Square, Flame,
-    Mic, MicOff, Scale, Share2, Trophy, Award, Medal, Printer, FileDown, Star
+    Mic, MicOff, Scale, Share2, Trophy, Award, Medal, Printer, FileDown, Star,
+    Zap, Compass, Rocket, Bot, Sliders, Play, RotateCcw
 } from 'lucide-react';
 import {
     getSupabase, getSupabaseConfig, saveSupabaseConfig, clearSupabaseConfig,
@@ -131,6 +132,64 @@ const initialSampleRules = [
         description: 'Spotify Família',
         day: 15,
         accountId: 'acc_credit'
+    }
+];
+
+const initialChallenges = [
+    {
+        id: 'ch_1',
+        title: 'Semana Zero Delivery 🍕',
+        category: 'Alimentação',
+        description: 'Cozinhem juntos todas as refeições por 7 dias sem pedir delivery.',
+        targetDays: 7,
+        currentDays: 0,
+        status: 'nao_iniciado',
+        points: 60,
+        rewardIcon: '👨‍🍳'
+    },
+    {
+        id: 'ch_2',
+        title: 'Desafio dos R$ 10 Diários 💰',
+        category: 'Poupança',
+        description: 'Guardem R$ 10 por dia no cofrinho durante 30 dias (R$ 300 acumulados).',
+        targetDays: 30,
+        currentDays: 0,
+        status: 'nao_iniciado',
+        points: 100,
+        rewardIcon: '🏦'
+    },
+    {
+        id: 'ch_3',
+        title: 'Mercado com Lista Fechada 🛒',
+        category: 'Controle',
+        description: 'Fazer as compras do mês 100% fiéis à lista de mercado sem itens extras.',
+        targetDays: 4,
+        currentDays: 0,
+        status: 'nao_iniciado',
+        points: 80,
+        rewardIcon: '🎯'
+    },
+    {
+        id: 'ch_4',
+        title: 'Contas no Mínimo 💡',
+        category: 'Economia',
+        description: 'Reduzir as contas de consumo (água, energia ou internet) no mês.',
+        targetDays: 1,
+        currentDays: 0,
+        status: 'nao_iniciado',
+        points: 75,
+        rewardIcon: '⚡'
+    },
+    {
+        id: 'ch_5',
+        title: 'Blindagem de 1 Mês de Reserva 🛡️',
+        category: 'Patrimônio',
+        description: 'Guardar o equivalente a pelo menos 1 mês de custo de vida no cofrinho.',
+        targetDays: 1,
+        currentDays: 0,
+        status: 'nao_iniciado',
+        points: 150,
+        rewardIcon: '💎'
     }
 ];
 
@@ -351,7 +410,30 @@ export default function App() {
     // 14. Relatório Executivo para Impressão / PDF
     const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
-    // 15. Estados Pull-to-Refresh
+    // 16. Simulador de Liberdade Financeira (FIRE)
+    const [fireMonthlyContribution, setFireMonthlyContribution] = useState(() => safeGet('fp_fire_contribution', 1000));
+    const [fireMonthlyExpenseCustom, setFireMonthlyExpenseCustom] = useState(() => safeGet('fp_fire_expense', 3500));
+    const [fireRealReturnRate, setFireRealReturnRate] = useState(() => safeGet('fp_fire_rate', 6.0));
+    const [fireCoupleAge, setFireCoupleAge] = useState(() => safeGet('fp_fire_age', 30));
+
+    // 17. Desafios Financeiros do Casal
+    const [coupleChallenges, setCoupleChallenges] = useState(() => safeGet('fp_couple_challenges', initialChallenges));
+
+    // 18. Chat Interativo com FinBot IA
+    const [isFinbotChatOpen, setIsFinbotChatOpen] = useState(false);
+    const [chatMessages, setChatMessages] = useState(() => safeGet('fp_finbot_chat', [
+        {
+            id: 'msg_welcome',
+            sender: 'finbot',
+            text: 'Olá! Sou o FinBot, consultor financeiro do casal 🤖✨ Conheço todas as finanças de vocês em tempo real. Pode me perguntar sobre metas, onde economizar ou como acelerar a independência financeira!',
+            timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+        }
+    ]));
+    const [finbotChatInput, setFinbotChatInput] = useState('');
+    const [isSendingChatMessage, setIsSendingChatMessage] = useState(false);
+    const chatMessagesEndRef = useRef(null);
+
+    // 19. Estados Pull-to-Refresh
     const [pullY, setPullY] = useState(0);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const touchStartRef = useRef(0);
@@ -967,9 +1049,303 @@ export default function App() {
         return upcomingDueBills.reduce((acc, curr) => acc + curr.amount, 0);
     }, [upcomingDueBills]);
 
+    const upcomingDueData = useMemo(() => {
+        return {
+            bills: upcomingDueBills,
+            total: totalUpcomingDue,
+            count: upcomingDueBills.length
+        };
+    }, [upcomingDueBills, totalUpcomingDue]);
+
     const pendingShoppingCount = useMemo(() => {
         return shoppingItems.filter(i => !i.completed).length;
     }, [shoppingItems]);
+
+    // 16. CÁLCULO E PROJEÇÃO DO SIMULADOR FIRE (LIBERDADE FINANCEIRA)
+    const fireSimulationData = useMemo(() => {
+        const totalLiquid = Object.values(accountBalances).reduce((a, b) => a + b, 0);
+        const totalInvestments = transactions.filter(t => t.type === 'investimento' && t.status === 'pago').reduce((a, b) => a + b.amount, 0);
+        const totalSavings = savingsGoals.reduce((a, b) => a + (b.currentAmount || 0), 0);
+        const currentNetWorth = Math.max(0, totalLiquid + totalInvestments + totalSavings);
+
+        const monthlyExpense = Math.max(500, fireMonthlyExpenseCustom || (totals.despesas || 3500));
+        const fireTarget = monthlyExpense * 300; // Regra dos 4% (300x o gasto mensal)
+
+        const monthlyContribution = Math.max(50, fireMonthlyContribution || 1000);
+        const annualRate = Math.max(0.01, (fireRealReturnRate || 6.0) / 100);
+        const monthlyRate = Math.pow(1 + annualRate, 1 / 12) - 1;
+
+        let months = 0;
+        if (currentNetWorth >= fireTarget) {
+            months = 0;
+        } else {
+            const numerator = fireTarget * monthlyRate + monthlyContribution;
+            const denominator = currentNetWorth * monthlyRate + monthlyContribution;
+            if (numerator > 0 && denominator > 0) {
+                months = Math.ceil(Math.log(numerator / denominator) / Math.log(1 + monthlyRate));
+            } else {
+                months = 1200;
+            }
+        }
+
+        const yearsRemaining = Math.floor(months / 12);
+        const monthsExtra = months % 12;
+        const retirementAge = (fireCoupleAge || 30) + yearsRemaining;
+        const progressPct = fireTarget > 0 ? Math.min(100, Math.round((currentNetWorth / fireTarget) * 100)) : 0;
+
+        // Efeito acelerador com +R$ 300/mês
+        const fasterContribution = monthlyContribution + 300;
+        const numFaster = fireTarget * monthlyRate + fasterContribution;
+        const denFaster = currentNetWorth * monthlyRate + fasterContribution;
+        const fasterMonths = (numFaster > 0 && denFaster > 0) ? Math.ceil(Math.log(numFaster / denFaster) / Math.log(1 + monthlyRate)) : months;
+        const monthsSaved = Math.max(0, months - fasterMonths);
+        const yearsSaved = (monthsSaved / 12).toFixed(1);
+
+        // Marcos de conquista patrimonial
+        const milestones = [
+            { pct: 25, label: 'Primeiro Degrau', amount: fireTarget * 0.25, reached: currentNetWorth >= fireTarget * 0.25 },
+            { pct: 50, label: 'Meio Caminho (Coast FIRE)', amount: fireTarget * 0.50, reached: currentNetWorth >= fireTarget * 0.50 },
+            { pct: 75, label: 'Quase Livres (Lean FIRE)', amount: fireTarget * 0.75, reached: currentNetWorth >= fireTarget * 0.75 },
+            { pct: 100, label: 'Liberdade Plena (Full FIRE)', amount: fireTarget, reached: currentNetWorth >= fireTarget }
+        ];
+
+        return {
+            currentNetWorth,
+            monthlyExpense,
+            fireTarget,
+            monthlyContribution,
+            annualRate,
+            months,
+            yearsRemaining,
+            monthsExtra,
+            retirementAge,
+            progressPct,
+            monthsSaved,
+            yearsSaved,
+            milestones
+        };
+    }, [accountBalances, transactions, savingsGoals, fireMonthlyExpenseCustom, totals.despesas, fireMonthlyContribution, fireRealReturnRate, fireCoupleAge]);
+
+    // 17. COMPARATIVO MÊS A MÊS & RAIO-X DE GASTOS INVISÍVEIS
+    const comparativeData = useMemo(() => {
+        const prevDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
+        const prevYear = prevDate.getFullYear();
+        const prevMonth = prevDate.getMonth();
+
+        const prevMonthTransactions = transactions.filter(t => {
+            const d = new Date(t.date + 'T00:00:00');
+            return d.getFullYear() === prevYear && d.getMonth() === prevMonth;
+        });
+
+        const prevTotals = prevMonthTransactions.reduce((acc, curr) => {
+            if (curr.status === 'pago') {
+                if (curr.type === 'entrada') acc.receitas += curr.amount;
+                if (curr.type === 'saida') acc.despesas += curr.amount;
+                if (curr.type === 'investimento') acc.investimentos += curr.amount;
+            }
+            return acc;
+        }, { receitas: 0, despesas: 0, investimentos: 0 });
+
+        const diffReceitas = totals.receitas - prevTotals.receitas;
+        const pctReceitas = prevTotals.receitas > 0 ? ((totals.receitas - prevTotals.receitas) / prevTotals.receitas) * 100 : 0;
+
+        const diffDespesas = totals.despesas - prevTotals.despesas;
+        const pctDespesas = prevTotals.despesas > 0 ? ((totals.despesas - prevTotals.despesas) / prevTotals.despesas) * 100 : 0;
+
+        const currentSavings = monthlySummary.saldoLiquido;
+        const prevSavings = prevTotals.receitas - prevTotals.despesas - prevTotals.investimentos;
+        const diffSavings = currentSavings - prevSavings;
+
+        // Comparativo por categoria
+        const currentExpGrouped = monthlyTransactions.filter(t => t.type === 'saida' && t.status === 'pago').reduce((acc, curr) => {
+            const cat = curr.category || 'Outros';
+            acc[cat] = (acc[cat] || 0) + curr.amount;
+            return acc;
+        }, {});
+
+        const prevExpGrouped = prevMonthTransactions.filter(t => t.type === 'saida' && t.status === 'pago').reduce((acc, curr) => {
+            const cat = curr.category || 'Outros';
+            acc[cat] = (acc[cat] || 0) + curr.amount;
+            return acc;
+        }, {});
+
+        const allCats = Array.from(new Set([...Object.keys(currentExpGrouped), ...Object.keys(prevExpGrouped)]));
+        const categoryComparison = allCats.map(cat => {
+            const currentAmount = currentExpGrouped[cat] || 0;
+            const prevAmount = prevExpGrouped[cat] || 0;
+            const diff = currentAmount - prevAmount;
+            const pct = prevAmount > 0 ? ((currentAmount - prevAmount) / prevAmount) * 100 : (currentAmount > 0 ? 100 : 0);
+            return {
+                category: cat,
+                currentAmount,
+                prevAmount,
+                diff,
+                pct,
+                color: allCategoryColors[cat] || '#94a3b8'
+            };
+        }).sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+
+        // Detector de Gastos Invisíveis (microgastos <= R$ 35 pagos)
+        const microExpenses = monthlyTransactions.filter(t => t.type === 'saida' && t.status === 'pago' && t.amount <= 35);
+        const totalMicroAmount = microExpenses.reduce((a, b) => a + b.amount, 0);
+        const countMicro = microExpenses.length;
+        const annualMicroProjected = totalMicroAmount * 12;
+        const fiveYearInvestedAt10 = totalMicroAmount > 0 ? (totalMicroAmount * ((Math.pow(1 + 0.10 / 12, 60) - 1) / (0.10 / 12))) : 0;
+
+        return {
+            prevDate,
+            prevTotals,
+            diffReceitas,
+            pctReceitas,
+            diffDespesas,
+            pctDespesas,
+            diffSavings,
+            categoryComparison,
+            microExpenses,
+            totalMicroAmount,
+            countMicro,
+            annualMicroProjected,
+            fiveYearInvestedAt10
+        };
+    }, [currentDate, transactions, monthlyTransactions, totals, monthlySummary, allCategoryColors]);
+
+    // Handlers de Desafios do Casal
+    const handleAdvanceChallenge = (challengeId) => {
+        setCoupleChallenges(prev => prev.map(ch => {
+            if (ch.id === challengeId) {
+                const nextDays = (ch.currentDays || 0) + 1;
+                const isCompleted = nextDays >= ch.targetDays;
+                if (isCompleted && ch.status !== 'concluido') {
+                    showToast(`🎉 Parabéns! Desafio "${ch.title}" concluído com sucesso (+${ch.points} pts)!`);
+                }
+                return {
+                    ...ch,
+                    currentDays: nextDays,
+                    status: isCompleted ? 'concluido' : 'em_progresso'
+                };
+            }
+            return ch;
+        }));
+    };
+
+    const handleResetChallenge = (challengeId) => {
+        setCoupleChallenges(prev => prev.map(ch => {
+            if (ch.id === challengeId) {
+                return { ...ch, currentDays: 0, status: 'nao_iniciado' };
+            }
+            return ch;
+        }));
+        showToast("Desafio reiniciado.");
+    };
+
+    // Handler de Envio de Mensagem no Chat do FinBot
+    const handleSendFinbotChatMessage = async (presetText = null) => {
+        const messageToSend = typeof presetText === 'string' ? presetText : finbotChatInput.trim();
+        if (!messageToSend || isSendingChatMessage) return;
+
+        if (!geminiApiKey.trim()) {
+            showToast("Configure sua chave Gemini no FinBot primeiro.");
+            setIsApiKeyModalOpen(true);
+            return;
+        }
+
+        const userMsg = {
+            id: 'msg_' + Date.now(),
+            sender: 'user',
+            text: messageToSend,
+            timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+        };
+
+        setChatMessages(prev => [...prev, userMsg]);
+        setFinbotChatInput('');
+        setIsSendingChatMessage(true);
+
+        try {
+            const monthName = currentDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+            const categoriesList = analysisData.data.map(d => `${d.name}: ${formatCurrency(d.amount)} (${d.percentage.toFixed(0)}%)`).join(', ');
+            const cofrinhosList = savingsGoals.map(g => `${g.title}: ${formatCurrency(g.currentAmount)} de meta ${formatCurrency(g.targetAmount)}`).join(', ');
+
+            const systemPrompt = `Você é o FinBot, consultor financeiro pessoal e empático especializado em finanças de casais.
+Você está conversando diretamente com o casal. Responda de forma estratégica, calorosa, motivadora e prática em português do Brasil.
+
+DADOS FINANCEIROS REAIS DO CASAL NESTE MOMENTO (${monthName}):
+- Receitas do Mês: ${formatCurrency(monthlySummary.receitas)}
+- Despesas Pagas do Mês: ${formatCurrency(monthlySummary.despesas)}
+- Investimentos Aportados: ${formatCurrency(monthlySummary.investimentos)}
+- Saldo Líquido do Mês: ${formatCurrency(monthlySummary.saldoLiquido)}
+- Taxa de Poupança do Mês: ${monthlySummary.taxaPoupanca.toFixed(1)}%
+- Patrimônio Total Líquido (Contas + Investimentos + Cofrinhos): ${formatCurrency(fireSimulationData.currentNetWorth)}
+- Despesas por Categoria: ${categoriesList || 'Nenhuma'}
+- Divisão do Casal (50/50): ${coupleSplitData.settlementText} (Você pagou ${formatCurrency(coupleSplitData.totalMarido)}, Esposa pagou ${formatCurrency(coupleSplitData.totalEsposa)})
+- Contas a Vencer nos Próximos 7 Dias: ${formatCurrency(upcomingDueData.total)} (${upcomingDueData.count} contas)
+- Cofrinhos e Metas Ativas: ${cofrinhosList || 'Nenhum'}
+- Gastos Invisíveis (Microgastos <= R$35): ${formatCurrency(comparativeData.totalMicroAmount)} (${comparativeData.countMicro} compras)
+- Estimativa de Aposentadoria FIRE: Liberdade em ${fireSimulationData.yearsRemaining} anos e ${fireSimulationData.monthsExtra} meses (Meta FIRE: ${formatCurrency(fireSimulationData.fireTarget)})
+
+Pergunta ou mensagem do casal:
+"${messageToSend}"
+
+Instruções:
+- Seja direto e acolhedor (1 a 3 parágrafos).
+- Use os números reais acima para dar conselhos e diagnósticos exatos.
+- Use emojis para tornar a leitura agradável.`;
+
+            const payload = {
+                contents: [{ parts: [{ text: systemPrompt }] }],
+                generationConfig: {
+                    temperature: 0.7,
+                    maxOutputTokens: 600
+                }
+            };
+
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${geminiApiKey.trim()}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const json = await res.json();
+            const rawResponse = json.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!rawResponse) throw new Error(json.error?.message || "Sem resposta da IA");
+
+            const botMsg = {
+                id: 'msg_bot_' + Date.now(),
+                sender: 'finbot',
+                text: rawResponse,
+                timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+            };
+
+            setChatMessages(prev => [...prev, botMsg]);
+        } catch (err) {
+            console.error(err);
+            const errorMsg = {
+                id: 'msg_err_' + Date.now(),
+                sender: 'finbot',
+                text: 'Desculpe, tive uma oscilação na conexão com a IA. Pode perguntar novamente?',
+                timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+            };
+            setChatMessages(prev => [...prev, errorMsg]);
+        } finally {
+            setIsSendingChatMessage(false);
+        }
+    };
+
+    // Sincronização LocalStorage para novas features
+    useEffect(() => {
+        localStorage.setItem('fp_fire_contribution', JSON.stringify(fireMonthlyContribution));
+        localStorage.setItem('fp_fire_expense', JSON.stringify(fireMonthlyExpenseCustom));
+        localStorage.setItem('fp_fire_rate', JSON.stringify(fireRealReturnRate));
+        localStorage.setItem('fp_fire_age', JSON.stringify(fireCoupleAge));
+    }, [fireMonthlyContribution, fireMonthlyExpenseCustom, fireRealReturnRate, fireCoupleAge]);
+
+    useEffect(() => {
+        localStorage.setItem('fp_couple_challenges', JSON.stringify(coupleChallenges));
+    }, [coupleChallenges]);
+
+    useEffect(() => {
+        localStorage.setItem('fp_finbot_chat', JSON.stringify(chatMessages));
+        chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [chatMessages, isFinbotChatOpen]);
 
     // Handlers para Cofrinhos & Sonhos do Casal
     const handleSaveSavingsGoal = (e) => {
@@ -3233,6 +3609,36 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                         <PieChart size={14} /> Resumo do Mês
                                     </button>
                                     <button
+                                        onClick={() => setAnalysisView('comparativo')}
+                                        className={`px-4 py-2.5 text-xs font-bold rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 ${analysisView === 'comparativo' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
+                                    >
+                                        <BarChart3 size={14} /> Comparativo & Gastos Invisíveis
+                                    </button>
+                                    <button
+                                        onClick={() => setAnalysisView('liberdade')}
+                                        className={`px-4 py-2.5 text-xs font-bold rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 ${analysisView === 'liberdade' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
+                                    >
+                                        <Rocket size={14} className="text-amber-400" /> Liberdade FIRE
+                                    </button>
+                                    <button
+                                        onClick={() => setAnalysisView('desafios')}
+                                        className={`px-4 py-2.5 text-xs font-bold rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 ${analysisView === 'desafios' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
+                                    >
+                                        <Flame size={14} className="text-orange-400" /> Desafios ({coupleChallenges.filter(c => c.status === 'concluido').length}/{coupleChallenges.length})
+                                    </button>
+                                    <button
+                                        onClick={() => setAnalysisView('divisao')}
+                                        className={`px-4 py-2.5 text-xs font-bold rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 ${analysisView === 'divisao' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
+                                    >
+                                        <Scale size={14} /> Divisão do Casal
+                                    </button>
+                                    <button
+                                        onClick={() => setAnalysisView('conquistas')}
+                                        className={`px-4 py-2.5 text-xs font-bold rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 ${analysisView === 'conquistas' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
+                                    >
+                                        <Trophy size={14} className="text-amber-400" /> Conquistas ({coupleAchievements.unlockedCount}/{coupleAchievements.totalBadges})
+                                    </button>
+                                    <button
                                         onClick={() => setAnalysisView('metas')}
                                         className={`px-4 py-2.5 text-xs font-bold rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 ${analysisView === 'metas' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
                                     >
@@ -3251,22 +3657,16 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                         <Sparkles size={14} /> Projeção 6 Meses
                                     </button>
                                     <button
-                                        onClick={() => setAnalysisView('divisao')}
-                                        className={`px-4 py-2.5 text-xs font-bold rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 ${analysisView === 'divisao' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
+                                        onClick={() => setIsFinbotChatOpen(true)}
+                                        className="px-4 py-2.5 text-xs font-black rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md hover:from-purple-700 hover:to-indigo-700 active:scale-95"
                                     >
-                                        <Scale size={14} /> Divisão do Casal
-                                    </button>
-                                    <button
-                                        onClick={() => setAnalysisView('conquistas')}
-                                        className={`px-4 py-2.5 text-xs font-bold rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 ${analysisView === 'conquistas' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
-                                    >
-                                        <Trophy size={14} className="text-amber-400" /> Conquistas ({coupleAchievements.unlockedCount}/{coupleAchievements.totalBadges})
+                                        <Bot size={14} className="text-amber-300" /> Chat FinBot IA
                                     </button>
                                     <button
                                         onClick={() => setIsReportModalOpen(true)}
                                         className="px-4 py-2.5 text-xs font-black rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-md hover:from-emerald-700 hover:to-teal-800 active:scale-95 ml-auto"
                                     >
-                                        <FileDown size={14} /> Relatório PDF / Imprimir
+                                        <FileDown size={14} /> Relatório PDF
                                     </button>
                                 </div>
 
@@ -3640,6 +4040,413 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                                     </div>
                                                 </div>
                                             ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {analysisView === 'comparativo' && (
+                                    <div className="space-y-6 animate-in fade-in duration-300">
+                                        {/* BANNER DE CABEÇALHO COMPARATIVO */}
+                                        <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-slate-900 rounded-3xl p-6 text-white shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                                            <div>
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <BarChart3 className="text-blue-300" size={20} />
+                                                    <span className="text-xs font-black uppercase tracking-wider text-blue-200">Raio-X Evolutivo</span>
+                                                </div>
+                                                <h3 className="text-xl font-black tracking-tight">
+                                                    {currentDate.toLocaleString('pt-BR', { month: 'long' })} vs {comparativeData.prevDate.toLocaleString('pt-BR', { month: 'long' })}
+                                                </h3>
+                                                <p className="text-xs text-blue-100/80 font-medium">
+                                                    Acompanhe se suas despesas e receitas aumentaram ou diminuíram em relação ao mês anterior.
+                                                </p>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className={`px-3 py-1.5 rounded-2xl text-xs font-black flex items-center gap-1.5 ${
+                                                    comparativeData.diffDespesas <= 0 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                                }`}>
+                                                    {comparativeData.diffDespesas <= 0 ? <ArrowDown size={14} /> : <ArrowUp size={14} />}
+                                                    {comparativeData.diffDespesas <= 0
+                                                        ? `Economia de ${formatCurrency(Math.abs(comparativeData.diffDespesas))} nas despesas`
+                                                        : `Despesas subiram ${formatCurrency(comparativeData.diffDespesas)}`}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* CARDS COMPARATIVOS MÊS A MÊS */}
+                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                            {/* Card Receitas */}
+                                            <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-100 dark:border-slate-800 shadow-sm">
+                                                <div className="flex justify-between items-center text-xs font-bold text-slate-400 mb-1">
+                                                    <span>Receitas Totais</span>
+                                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${comparativeData.diffReceitas >= 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300' : 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300'}`}>
+                                                        {comparativeData.diffReceitas >= 0 ? `+${comparativeData.pctReceitas.toFixed(0)}%` : `${comparativeData.pctReceitas.toFixed(0)}%`}
+                                                    </span>
+                                                </div>
+                                                <p className="text-xl font-black text-emerald-600 dark:text-emerald-400">{formatCurrency(totals.receitas)}</p>
+                                                <p className="text-[11px] text-slate-400 mt-1">Mês anterior: {formatCurrency(comparativeData.prevTotals.receitas)}</p>
+                                            </div>
+
+                                            {/* Card Despesas */}
+                                            <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-100 dark:border-slate-800 shadow-sm">
+                                                <div className="flex justify-between items-center text-xs font-bold text-slate-400 mb-1">
+                                                    <span>Despesas Pagas</span>
+                                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${comparativeData.diffDespesas <= 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300' : 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300'}`}>
+                                                        {comparativeData.diffDespesas > 0 ? `+${comparativeData.pctDespesas.toFixed(0)}%` : `${comparativeData.pctDespesas.toFixed(0)}%`}
+                                                    </span>
+                                                </div>
+                                                <p className="text-xl font-black text-rose-600 dark:text-rose-400">{formatCurrency(totals.despesas)}</p>
+                                                <p className="text-[11px] text-slate-400 mt-1">Mês anterior: {formatCurrency(comparativeData.prevTotals.despesas)}</p>
+                                            </div>
+
+                                            {/* Card Saldo Líquido */}
+                                            <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-100 dark:border-slate-800 shadow-sm">
+                                                <div className="flex justify-between items-center text-xs font-bold text-slate-400 mb-1">
+                                                    <span>Saldo Guardado / Mês</span>
+                                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${comparativeData.diffSavings >= 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300' : 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300'}`}>
+                                                        {comparativeData.diffSavings >= 0 ? `+${formatCurrency(comparativeData.diffSavings)}` : formatCurrency(comparativeData.diffSavings)}
+                                                    </span>
+                                                </div>
+                                                <p className={`text-xl font-black ${monthlySummary.saldoLiquido >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-rose-600'}`}>{formatCurrency(monthlySummary.saldoLiquido)}</p>
+                                                <p className="text-[11px] text-slate-400 mt-1">Taxa Poupança: {monthlySummary.taxaPoupanca.toFixed(1)}%</p>
+                                            </div>
+                                        </div>
+
+                                        {/* DETECTOR DE GASTOS INVISÍVEIS (RALO FINANCEIRO) */}
+                                        <div className="bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent rounded-3xl p-6 border border-amber-500/20 dark:border-amber-500/30">
+                                            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-5">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-md shadow-amber-500/30 shrink-0">
+                                                        <Zap size={24} />
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="text-base font-black text-slate-800 dark:text-white">Detector de Gastos Invisíveis ("Ralo Financeiro")</h4>
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400">Pequenas compras de até R$ 35,00 que passam despercebidas no dia a dia</p>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right bg-white dark:bg-slate-900 px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                                                    <span className="text-[10px] font-black text-slate-400 uppercase">Impacto Anual Projetado</span>
+                                                    <p className="text-base font-black text-amber-600 dark:text-amber-400">{formatCurrency(comparativeData.annualMicroProjected)} / ano</p>
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                                                <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                                                    <span className="text-xs text-slate-400 font-bold">Total Gasto em Microcompras</span>
+                                                    <p className="text-lg font-black text-slate-800 dark:text-white mt-0.5">{formatCurrency(comparativeData.totalMicroAmount)}</p>
+                                                    <span className="text-[10px] text-slate-400">{comparativeData.countMicro} transações registradas</span>
+                                                </div>
+                                                <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                                                    <span className="text-xs text-slate-400 font-bold">Participação no Orçamento</span>
+                                                    <p className="text-lg font-black text-orange-600 dark:text-orange-400 mt-0.5">
+                                                        {totals.despesas > 0 ? ((comparativeData.totalMicroAmount / totals.despesas) * 100).toFixed(1) : 0}%
+                                                    </p>
+                                                    <span className="text-[10px] text-slate-400">do total de despesas do mês</span>
+                                                </div>
+                                                <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                                                    <span className="text-xs text-slate-400 font-bold">Se Investido em 5 Anos (10% a.a.)</span>
+                                                    <p className="text-lg font-black text-emerald-600 dark:text-emerald-400 mt-0.5">{formatCurrency(comparativeData.fiveYearInvestedAt10)}</p>
+                                                    <span className="text-[10px] text-slate-400">Potencial patrimonial acumulado</span>
+                                                </div>
+                                            </div>
+
+                                            {/* Lista dos microgastos */}
+                                            {comparativeData.microExpenses.length > 0 && (
+                                                <div className="space-y-2">
+                                                    <span className="text-[11px] font-black text-slate-500 uppercase">Microgastos registrados este mês:</span>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
+                                                        {comparativeData.microExpenses.slice(0, 9).map(t => (
+                                                            <div key={t.id} className="p-2.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 flex justify-between items-center text-xs">
+                                                                <div className="truncate mr-2">
+                                                                    <span className="font-bold text-slate-800 dark:text-white truncate block">{t.description || t.category}</span>
+                                                                    <span className="text-[10px] text-slate-400">{new Date(t.date + 'T12:00:00').toLocaleDateString('pt-BR')} • {t.category}</span>
+                                                                </div>
+                                                                <span className="font-black text-rose-600 shrink-0">{formatCurrency(t.amount)}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* COMPARATIVO CATEGORIA POR CATEGORIA */}
+                                        <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-100 dark:border-slate-800 shadow-sm">
+                                            <h4 className="text-base font-black text-slate-800 dark:text-white mb-4">Variação de Gastos por Categoria</h4>
+                                            <div className="space-y-3">
+                                                {comparativeData.categoryComparison.map(cat => {
+                                                    const isIncreased = cat.diff > 0;
+                                                    const maxVal = Math.max(cat.currentAmount, cat.prevAmount, 1);
+                                                    return (
+                                                        <div key={cat.category} className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800/80">
+                                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                                                                <div className="flex items-center gap-2.5">
+                                                                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color }}></div>
+                                                                    <span className="text-xs font-black text-slate-800 dark:text-white">{cat.category}</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-3 text-xs">
+                                                                    <span className="text-slate-400">Anterior: <strong>{formatCurrency(cat.prevAmount)}</strong></span>
+                                                                    <span className="text-slate-800 dark:text-white font-black">Atual: <strong>{formatCurrency(cat.currentAmount)}</strong></span>
+                                                                    <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${
+                                                                        cat.diff === 0 ? 'bg-slate-200 dark:bg-slate-800 text-slate-500' : isIncreased ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300'
+                                                                    }`}>
+                                                                        {cat.diff === 0 ? 'Sem alteração' : isIncreased ? `+${formatCurrency(cat.diff)} (+${cat.pct.toFixed(0)}%)` : `${formatCurrency(cat.diff)} (${cat.pct.toFixed(0)}%)`}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                            {/* Barra comparativa */}
+                                                            <div className="space-y-1">
+                                                                <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                                                                    <span className="w-12">Atual</span>
+                                                                    <div className="flex-1 bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+                                                                        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${(cat.currentAmount / maxVal) * 100}%`, backgroundColor: cat.color }}></div>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                                                                    <span className="w-12">Anterior</span>
+                                                                    <div className="flex-1 bg-slate-200 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                                                                        <div className="h-full rounded-full bg-slate-400 dark:bg-slate-600 transition-all duration-500" style={{ width: `${(cat.prevAmount / maxVal) * 100}%` }}></div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {analysisView === 'liberdade' && (
+                                    <div className="space-y-6 animate-in fade-in duration-300">
+                                        {/* HERO CARD DO SIMULADOR FIRE */}
+                                        <div className="bg-gradient-to-r from-purple-700 via-indigo-700 to-blue-800 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
+                                            <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                                                <div>
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <Rocket className="text-amber-300 animate-bounce" size={24} />
+                                                        <span className="text-xs font-black uppercase tracking-wider text-amber-300">Planejamento de Liberdade Financeira (FIRE)</span>
+                                                    </div>
+                                                    <h3 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight">
+                                                        Meta para Viver de Renda Passiva
+                                                    </h3>
+                                                    <p className="text-xs sm:text-sm text-blue-100/90 font-medium mt-1 max-w-xl">
+                                                        Com base na Regra dos 4% (300x os gastos mensais), vocês precisam de <strong>{formatCurrency(fireSimulationData.fireTarget)}</strong> para cobrir todos os seus custos para sempre.
+                                                    </p>
+                                                </div>
+
+                                                <div className="bg-white/10 backdrop-blur-md p-5 rounded-3xl border border-white/20 text-center shrink-0 w-full sm:w-auto">
+                                                    <span className="text-[11px] font-black uppercase text-blue-200 block">Tempo Estimado Restante</span>
+                                                    <p className="text-2xl sm:text-3xl font-black text-amber-300 my-1">
+                                                        {fireSimulationData.yearsRemaining} anos {fireSimulationData.monthsExtra > 0 ? `e ${fireSimulationData.monthsExtra} m` : ''}
+                                                    </p>
+                                                    <span className="text-xs font-bold text-white/90">
+                                                        Aposentadoria aos <strong>{fireSimulationData.retirementAge} anos</strong> do casal
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            {/* Barra de Progresso Geral até o FIRE */}
+                                            <div className="relative z-10 mt-6 pt-6 border-t border-white/15">
+                                                <div className="flex justify-between text-xs font-black mb-2">
+                                                    <span>Patrimônio Acumulado: {formatCurrency(fireSimulationData.currentNetWorth)}</span>
+                                                    <span className="text-amber-300 font-extrabold">{fireSimulationData.progressPct}% Concluído</span>
+                                                </div>
+                                                <div className="w-full bg-black/30 h-3.5 rounded-full overflow-hidden p-0.5 border border-white/20">
+                                                    <div className="bg-gradient-to-r from-amber-400 via-orange-400 to-yellow-300 h-full rounded-full transition-all duration-700" style={{ width: `${fireSimulationData.progressPct}%` }}></div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* CONTROLES E SLIDERS INTERATIVOS */}
+                                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                                            <div className="lg:col-span-6 bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-100 dark:border-slate-800 shadow-sm space-y-5">
+                                                <h4 className="text-base font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                                    <Sliders size={18} className="text-blue-600" /> Parâmetros de Simulação do Casal
+                                                </h4>
+
+                                                {/* Slider 1: Aporte Mensal */}
+                                                <div>
+                                                    <div className="flex justify-between text-xs font-bold mb-1.5">
+                                                        <span className="text-slate-600 dark:text-slate-300">Aporte Mensal do Casal</span>
+                                                        <span className="text-blue-600 dark:text-blue-400 font-black">{formatCurrency(fireMonthlyContribution)} / mês</span>
+                                                    </div>
+                                                    <input
+                                                        type="range"
+                                                        min="200"
+                                                        max="10000"
+                                                        step="100"
+                                                        value={fireMonthlyContribution}
+                                                        onChange={(e) => setFireMonthlyContribution(Number(e.target.value))}
+                                                        className="w-full accent-blue-600 cursor-pointer"
+                                                    />
+                                                </div>
+
+                                                {/* Slider 2: Custo de Vida Mensal na Aposentadoria */}
+                                                <div>
+                                                    <div className="flex justify-between text-xs font-bold mb-1.5">
+                                                        <span className="text-slate-600 dark:text-slate-300">Gasto Mensal Desejado (Renda Passiva)</span>
+                                                        <span className="text-purple-600 dark:text-purple-400 font-black">{formatCurrency(fireMonthlyExpenseCustom)} / mês</span>
+                                                    </div>
+                                                    <input
+                                                        type="range"
+                                                        min="1500"
+                                                        max="15000"
+                                                        step="250"
+                                                        value={fireMonthlyExpenseCustom}
+                                                        onChange={(e) => setFireMonthlyExpenseCustom(Number(e.target.value))}
+                                                        className="w-full accent-purple-600 cursor-pointer"
+                                                    />
+                                                </div>
+
+                                                {/* Slider 3: Rentabilidade Real Acima da Inflação */}
+                                                <div>
+                                                    <div className="flex justify-between text-xs font-bold mb-1.5">
+                                                        <span className="text-slate-600 dark:text-slate-300">Rentabilidade Real Esperada (% a.a. acima da inflação)</span>
+                                                        <span className="text-emerald-600 dark:text-emerald-400 font-black">{fireRealReturnRate.toFixed(1)}% ao ano</span>
+                                                    </div>
+                                                    <input
+                                                        type="range"
+                                                        min="3"
+                                                        max="12"
+                                                        step="0.5"
+                                                        value={fireRealReturnRate}
+                                                        onChange={(e) => setFireRealReturnRate(Number(e.target.value))}
+                                                        className="w-full accent-emerald-600 cursor-pointer"
+                                                    />
+                                                </div>
+
+                                                {/* Idade Atual do Casal */}
+                                                <div>
+                                                    <div className="flex justify-between text-xs font-bold mb-1.5">
+                                                        <span className="text-slate-600 dark:text-slate-300">Idade Média do Casal Hoje</span>
+                                                        <span className="text-slate-800 dark:text-white font-black">{fireCoupleAge} anos</span>
+                                                    </div>
+                                                    <input
+                                                        type="range"
+                                                        min="18"
+                                                        max="70"
+                                                        step="1"
+                                                        value={fireCoupleAge}
+                                                        onChange={(e) => setFireCoupleAge(Number(e.target.value))}
+                                                        className="w-full accent-slate-600 cursor-pointer"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            {/* CARD DE EFEITO ACELERADOR E DICAS */}
+                                            <div className="lg:col-span-6 space-y-4">
+                                                {/* Efeito Acelerador */}
+                                                <div className="p-6 rounded-3xl bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent border border-amber-500/30">
+                                                    <div className="flex items-center gap-3 mb-2">
+                                                        <Sparkles className="text-amber-500 animate-pulse" size={20} />
+                                                        <h4 className="text-base font-black text-slate-800 dark:text-white">Efeito Acelerador de Liberdade</h4>
+                                                    </div>
+                                                    <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                                        Se vocês aumentarem os aportes em apenas <strong>+R$ 300/mês</strong> (para {formatCurrency(fireMonthlyContribution + 300)}/mês), a liberdade financeira será antecipada em <strong>{fireSimulationData.yearsSaved} anos</strong>!
+                                                    </p>
+                                                </div>
+
+                                                {/* Marcos do Patrimônio */}
+                                                <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-100 dark:border-slate-800 shadow-sm space-y-3">
+                                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider">Marcos da Jornada FIRE</h4>
+                                                    <div className="space-y-2.5">
+                                                        {fireSimulationData.milestones.map((m, i) => (
+                                                            <div key={i} className="flex justify-between items-center p-3 rounded-2xl bg-slate-50 dark:bg-slate-950 text-xs">
+                                                                <div className="flex items-center gap-2.5">
+                                                                    <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${m.reached ? 'bg-emerald-500 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-500'}`}>
+                                                                        {m.reached ? <Check size={12} /> : `${m.pct}%`}
+                                                                    </div>
+                                                                    <span className="font-bold text-slate-700 dark:text-slate-300">{m.label}</span>
+                                                                </div>
+                                                                <span className={`font-black ${m.reached ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}>
+                                                                    {formatCurrency(m.amount)}
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {analysisView === 'desafios' && (
+                                    <div className="space-y-6 animate-in fade-in duration-300">
+                                        {/* BANNER DE CABEÇALHO */}
+                                        <div className="bg-gradient-to-r from-orange-600 via-amber-600 to-yellow-600 rounded-3xl p-6 sm:p-8 text-white shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                                            <div>
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <Flame size={22} className="text-yellow-200 animate-pulse" />
+                                                    <span className="text-xs font-black uppercase tracking-wider text-yellow-100">Gincana Financeira do Casal</span>
+                                                </div>
+                                                <h3 className="text-2xl font-black tracking-tight">Desafios & Metas Compartilhadas</h3>
+                                                <p className="text-xs text-yellow-100/90 font-medium">Economizem juntos, acumulem pontos e elevem o Nível do Casal!</p>
+                                            </div>
+                                            <div className="bg-white/20 backdrop-blur-md px-5 py-3 rounded-2xl border border-white/30 text-center shrink-0">
+                                                <span className="text-[10px] uppercase font-black text-yellow-100 block">Desafios Concluídos</span>
+                                                <p className="text-2xl font-black text-white">
+                                                    {coupleChallenges.filter(c => c.status === 'concluido').length} / {coupleChallenges.length}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {/* GRADE DE DESAFIOS */}
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                                            {coupleChallenges.map(ch => {
+                                                const isCompleted = ch.status === 'concluido';
+                                                const pct = Math.min(100, Math.round(((ch.currentDays || 0) / (ch.targetDays || 1)) * 100));
+                                                return (
+                                                    <div
+                                                        key={ch.id}
+                                                        className={`rounded-3xl p-6 border transition-all flex flex-col justify-between ${
+                                                            isCompleted
+                                                                ? 'bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/20 border-emerald-300 dark:border-emerald-800/80 shadow-md'
+                                                                : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 shadow-sm'
+                                                        }`}
+                                                    >
+                                                        <div>
+                                                            <div className="flex justify-between items-start mb-3">
+                                                                <span className="text-3xl">{ch.rewardIcon || '🎯'}</span>
+                                                                <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider ${
+                                                                    isCompleted ? 'bg-emerald-500 text-white' : ch.status === 'em_progresso' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+                                                                }`}>
+                                                                    {isCompleted ? 'Concluído 🎉' : ch.status === 'em_progresso' ? 'Em Progresso 🏃' : 'Não Iniciado'}
+                                                                </span>
+                                                            </div>
+
+                                                            <h4 className="text-base font-black text-slate-800 dark:text-white leading-tight">{ch.title}</h4>
+                                                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">{ch.description}</p>
+                                                        </div>
+
+                                                        <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                                                            <div className="flex justify-between text-xs font-bold">
+                                                                <span className="text-slate-400">Progresso</span>
+                                                                <span className="text-slate-800 dark:text-white font-black">{ch.currentDays} de {ch.targetDays} dias ({pct}%)</span>
+                                                            </div>
+                                                            <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+                                                                <div className="h-full rounded-full bg-gradient-to-r from-orange-500 to-amber-400 transition-all duration-500" style={{ width: `${pct}%` }}></div>
+                                                            </div>
+
+                                                            <div className="flex items-center gap-2 pt-1">
+                                                                <button
+                                                                    onClick={() => handleAdvanceChallenge(ch.id)}
+                                                                    disabled={isCompleted}
+                                                                    className="flex-1 py-2.5 px-3 rounded-2xl bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white text-xs font-black transition flex items-center justify-center gap-1.5 shadow-sm active:scale-95"
+                                                                >
+                                                                    {isCompleted ? <Check size={14} /> : <Plus size={14} />}
+                                                                    {isCompleted ? 'Desafio Cumprido!' : '+1 Dia Concluído'}
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleResetChallenge(ch.id)}
+                                                                    className="p-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition"
+                                                                    title="Reiniciar Desafio"
+                                                                >
+                                                                    <RotateCcw size={14} />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 )}
@@ -5340,6 +6147,152 @@ Investimentos: Renda Fixa, Ações, Cripto, Reserva de Emergência, Fundos Imobi
                                     Fechar
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ========================================================================= */}
+                {/* BOTÃO FLUTUANTE DE CHAT COM FINBOT IA */}
+                {/* ========================================================================= */}
+                <button
+                    onClick={() => setIsFinbotChatOpen(true)}
+                    className="fixed bottom-20 sm:bottom-6 right-4 sm:right-6 z-40 p-3.5 sm:p-4 rounded-3xl bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white shadow-xl hover:shadow-purple-500/30 hover:scale-105 active:scale-95 transition-all duration-300 flex items-center gap-2 group border border-white/20"
+                    title="Conversar com FinBot IA"
+                >
+                    <div className="relative">
+                        <Bot size={22} className="text-white group-hover:rotate-12 transition-transform" />
+                        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 border-2 border-purple-600 rounded-full animate-ping"></span>
+                        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 border-2 border-purple-600 rounded-full"></span>
+                    </div>
+                    <span className="hidden sm:inline text-xs font-black tracking-wide pr-1">FinBot IA</span>
+                </button>
+
+                {/* ========================================================================= */}
+                {/* MODAL DE CHAT INTERATIVO COM FINBOT IA */}
+                {/* ========================================================================= */}
+                {isFinbotChatOpen && (
+                    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200">
+                        <div className="bg-white dark:bg-slate-900 w-full max-w-lg h-[92vh] sm:h-[80vh] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800">
+                            {/* Cabeçalho do Chat */}
+                            <div className="p-4 sm:p-5 bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white flex items-center justify-between shadow-md shrink-0">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center backdrop-blur-md shrink-0 shadow-inner">
+                                        <Bot size={22} className="text-amber-300" />
+                                    </div>
+                                    <div>
+                                        <div className="flex items-center gap-1.5">
+                                            <h3 className="text-sm font-black tracking-tight">FinBot IA • Consultor do Casal</h3>
+                                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                                        </div>
+                                        <p className="text-[10px] text-blue-100 font-medium">Analisando suas finanças reais em tempo real</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setIsFinbotChatOpen(false)}
+                                    className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition active:scale-90"
+                                >
+                                    <X size={16} />
+                                </button>
+                            </div>
+
+                            {/* Histórico de Mensagens */}
+                            <div className="flex-1 p-4 overflow-y-auto space-y-3.5 bg-slate-50/50 dark:bg-slate-950/40">
+                                {chatMessages.map(msg => {
+                                    const isUser = msg.sender === 'user';
+                                    return (
+                                        <div
+                                            key={msg.id}
+                                            className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}
+                                        >
+                                            <div className="flex items-end gap-2 max-w-[85%]">
+                                                {!isUser && (
+                                                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-600 to-indigo-600 text-white flex items-center justify-center shrink-0 text-xs shadow-sm mb-1">
+                                                        🤖
+                                                    </div>
+                                                )}
+                                                <div
+                                                    className={`p-3.5 rounded-2xl text-xs leading-relaxed ${
+                                                        isUser
+                                                            ? 'bg-blue-600 text-white rounded-br-sm shadow-md'
+                                                            : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-bl-sm border border-slate-200 dark:border-slate-800 shadow-sm whitespace-pre-line'
+                                                    }`}
+                                                >
+                                                    {msg.text}
+                                                </div>
+                                            </div>
+                                            <span className="text-[9px] text-slate-400 font-medium mt-1 px-1">
+                                                {msg.timestamp}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+
+                                {isSendingChatMessage && (
+                                    <div className="flex items-end gap-2 max-w-[85%]">
+                                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-600 to-indigo-600 text-white flex items-center justify-center shrink-0 text-xs shadow-sm mb-1">
+                                            🤖
+                                        </div>
+                                        <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm text-xs flex items-center gap-2 text-slate-500">
+                                            <Loader2 size={14} className="animate-spin text-purple-600" />
+                                            <span>FinBot está analisando seus números...</span>
+                                        </div>
+                                    </div>
+                                )}
+                                <div ref={chatMessagesEndRef} />
+                            </div>
+
+                            {/* Sugestões Rápidas (Pills) */}
+                            <div className="px-3 py-2 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 overflow-x-auto scrollbar-hide flex gap-1.5 shrink-0">
+                                <button
+                                    onClick={() => handleSendFinbotChatMessage("Quanto ainda podemos gastar este mês sem estourar o orçamento?")}
+                                    disabled={isSendingChatMessage}
+                                    className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-purple-50 hover:text-purple-600 dark:hover:bg-purple-950/50 dark:hover:text-purple-300 text-[10px] font-bold text-slate-600 dark:text-slate-300 rounded-xl whitespace-nowrap transition shrink-0"
+                                >
+                                    💳 Quanto ainda podemos gastar?
+                                </button>
+                                <button
+                                    onClick={() => handleSendFinbotChatMessage("Onde o dinheiro mais escapou este mês e onde podemos cortar?")}
+                                    disabled={isSendingChatMessage}
+                                    className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-purple-50 hover:text-purple-600 dark:hover:bg-purple-950/50 dark:hover:text-purple-300 text-[10px] font-bold text-slate-600 dark:text-slate-300 rounded-xl whitespace-nowrap transition shrink-0"
+                                >
+                                    🔍 Onde o dinheiro mais escapou?
+                                </button>
+                                <button
+                                    onClick={() => handleSendFinbotChatMessage("Me dê 3 dicas práticas para economizarmos R$ 500 no próximo mês.")}
+                                    disabled={isSendingChatMessage}
+                                    className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-purple-50 hover:text-purple-600 dark:hover:bg-purple-950/50 dark:hover:text-purple-300 text-[10px] font-bold text-slate-600 dark:text-slate-300 rounded-xl whitespace-nowrap transition shrink-0"
+                                >
+                                    💡 Como economizar R$ 500?
+                                </button>
+                                <button
+                                    onClick={() => handleSendFinbotChatMessage("Como podemos acelerar nossa meta de liberdade financeira (FIRE)?")}
+                                    disabled={isSendingChatMessage}
+                                    className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-purple-50 hover:text-purple-600 dark:hover:bg-purple-950/50 dark:hover:text-purple-300 text-[10px] font-bold text-slate-600 dark:text-slate-300 rounded-xl whitespace-nowrap transition shrink-0"
+                                >
+                                    🚀 Acelerar Liberdade FIRE
+                                </button>
+                            </div>
+
+                            {/* Campo de Entrada e Envio */}
+                            <form
+                                onSubmit={(e) => { e.preventDefault(); handleSendFinbotChatMessage(); }}
+                                className="p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center gap-2 shrink-0"
+                            >
+                                <input
+                                    type="text"
+                                    value={finbotChatInput}
+                                    onChange={(e) => setFinbotChatInput(e.target.value)}
+                                    placeholder="Pergunte ao FinBot (use o teclado ou ditado)..."
+                                    className="flex-1 px-4 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-white rounded-2xl text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 border border-transparent"
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={!finbotChatInput.trim() || isSendingChatMessage}
+                                    className="p-2.5 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white disabled:opacity-40 hover:from-purple-700 hover:to-indigo-700 transition active:scale-95 shrink-0 shadow-md shadow-purple-500/20"
+                                >
+                                    <Send size={16} />
+                                </button>
+                            </form>
                         </div>
                     </div>
                 )}
