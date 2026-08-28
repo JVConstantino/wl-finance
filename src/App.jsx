@@ -839,23 +839,50 @@ export default function App() {
         };
     }, [supabaseConfig.isConfigured]);
 
-    // Subscrição em Tempo Real (Realtime)
+    // Subscrição em Tempo Real (Realtime & Auto-Sync ao focar a janela)
     useEffect(() => {
         const supabase = getSupabase();
         if (!supabase || !supabaseUser) return;
 
         const channel = supabase
-            .channel('db-changes')
+            .channel('db-changes-all')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => {
+                loadCloudData(supabaseUser);
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'accounts' }, () => {
                 loadCloudData(supabaseUser);
             })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'monthly_goals' }, () => {
                 loadCloudData(supabaseUser);
             })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'savings_goals' }, () => {
+                loadCloudData(supabaseUser);
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items' }, () => {
+                loadCloudData(supabaseUser);
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'repeating_rules' }, () => {
+                loadCloudData(supabaseUser);
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'custom_categories' }, () => {
+                loadCloudData(supabaseUser);
+            })
             .subscribe();
+
+        // Auto-Sync quando o usuário volta para a aba no PC ou desbloqueia o celular
+        const handleVisibilityOrFocus = () => {
+            if (document.visibilityState === 'visible') {
+                loadCloudData(supabaseUser);
+            }
+        };
+
+        window.addEventListener('focus', handleVisibilityOrFocus);
+        document.addEventListener('visibilitychange', handleVisibilityOrFocus);
 
         return () => {
             supabase.removeChannel(channel);
+            window.removeEventListener('focus', handleVisibilityOrFocus);
+            document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
         };
     }, [supabaseUser]);
 
