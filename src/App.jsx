@@ -1187,12 +1187,21 @@ Estruture a resposta com tópicos claros usando emojis:
         setRecordingSeconds(0);
 
         try {
-            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                showToast("Microfone não disponível. Você pode digitar a frase abaixo!");
-                return;
-            }
+            // Função universal para obter stream de áudio com fallbacks para navegadores móveis
+            const getAudioStream = async () => {
+                if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                    return await navigator.mediaDevices.getUserMedia({ audio: true });
+                }
+                const legacyGUM = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia;
+                if (legacyGUM) {
+                    return new Promise((resolve, reject) => {
+                        legacyGUM.call(navigator, { audio: true }, resolve, reject);
+                    });
+                }
+                throw new Error("NO_MEDIA_DEVICES");
+            };
 
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const stream = await getAudioStream();
             audioChunksRef.current = [];
 
             // Detecta melhor formato suportado pelo celular (Android, iOS Safari, Chrome)
@@ -1238,7 +1247,13 @@ Estruture a resposta com tópicos claros usando emojis:
         } catch (err) {
             console.error('Erro ao abrir microfone:', err);
             setIsListeningVoice(false);
-            showToast("Permissão de microfone não concedida. Você pode digitar a frase!");
+            if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                showToast("Permissão de microfone bloqueada. Libere nas permissões do site!");
+            } else if (err.message === 'NO_MEDIA_DEVICES') {
+                showToast("Abra o app no Chrome ou Safari para liberar o microfone!");
+            } else {
+                showToast("Microfone não disponível neste navegador. Você pode digitar abaixo!");
+            }
         }
     };
 
