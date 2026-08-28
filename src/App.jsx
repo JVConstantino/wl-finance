@@ -57,6 +57,24 @@ const initialSampleShoppingItems = [
     { id: 'shop_3', name: 'Frutas da semana', quantity: '1 saco', estimatedPrice: 35.00, completed: false, category: 'Hortifruti', addedBy: 'conjunto' }
 ];
 
+const defaultSampleFinancings = [
+    {
+        id: 'fin_sample_car',
+        title: 'Financiamento do Carro',
+        type: 'veiculo',
+        installmentAmount: 1250.00,
+        totalInstallments: 48,
+        paidInstallments: 14,
+        dueDay: 10,
+        accountId: 'acc_main',
+        paidBy: 'conjunto',
+        interestRateAnnual: 18.5,
+        startDate: '2024-01-10',
+        icon: '🚗',
+        autoDebit: true
+    }
+];
+
 const initialSampleTransactions = [
     {
         id: 'tx_init_1',
@@ -422,7 +440,32 @@ export default function App() {
     const [isSendingChatMessage, setIsSendingChatMessage] = useState(false);
     const chatMessagesEndRef = useRef(null);
 
-    // 19. Estados Pull-to-Refresh
+    // 20. Módulo de Financiamentos & Dívidas do Casal
+    const [financings, setFinancings] = useState(() => safeGet('fp_financings', defaultSampleFinancings));
+    const [isFinancingModalOpen, setIsFinancingModalOpen] = useState(false);
+    const [isContractAnalysisModalOpen, setIsContractAnalysisModalOpen] = useState(false);
+    const [contractImageBase64, setContractImageBase64] = useState(null);
+    const [contractTextInput, setContractTextInput] = useState('');
+    const [isAnalyzingContract, setIsAnalyzingContract] = useState(false);
+    const [contractAnalysisResult, setContractAnalysisResult] = useState(null);
+    const [selectedFinancingForAmortization, setSelectedFinancingForAmortization] = useState(null);
+    const [amortizationPrepayCount, setAmortizationPrepayCount] = useState(1);
+    const [isAmortizationModalOpen, setIsAmortizationModalOpen] = useState(false);
+    const [newFinancingData, setNewFinancingData] = useState({
+        title: '',
+        type: 'veiculo',
+        installmentAmount: '',
+        totalInstallments: '',
+        paidInstallments: '0',
+        dueDay: '10',
+        accountId: 'acc_main',
+        paidBy: 'conjunto',
+        interestRateAnnual: '',
+        icon: '🚗',
+        autoDebit: true
+    });
+
+    // 21. Estados Pull-to-Refresh
     const [pullY, setPullY] = useState(0);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const touchStartRef = useRef(0);
@@ -1375,6 +1418,276 @@ Mensagem do casal:
         localStorage.setItem('fp_finbot_chat', JSON.stringify(chatMessages));
         chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [chatMessages, isFinbotChatOpen]);
+
+    // Sincronização LocalStorage para Financiamentos
+    useEffect(() => {
+        localStorage.setItem('fp_financings', JSON.stringify(financings));
+    }, [financings]);
+
+    // Resumo Geral de Financiamentos
+    const financingsSummary = useMemo(() => {
+        const list = financings || [];
+        let totalFinanced = 0;
+        let totalPaid = 0;
+        let totalRemaining = 0;
+        let monthlyInstallmentsTotal = 0;
+
+        list.forEach(f => {
+            const installment = Number(f.installmentAmount) || 0;
+            const totalInst = Number(f.totalInstallments) || 1;
+            const paidInst = Math.min(totalInst, Number(f.paidInstallments) || 0);
+            const remInst = Math.max(0, totalInst - paidInst);
+
+            totalFinanced += installment * totalInst;
+            totalPaid += installment * paidInst;
+            totalRemaining += installment * remInst;
+            if (remInst > 0) {
+                monthlyInstallmentsTotal += installment;
+            }
+        });
+
+        const percentPaid = totalFinanced > 0 ? Math.min(100, Math.round((totalPaid / totalFinanced) * 100)) : 0;
+        return {
+            list,
+            totalFinanced,
+            totalPaid,
+            totalRemaining,
+            monthlyInstallmentsTotal,
+            percentPaid,
+            activeCount: list.filter(f => (Number(f.totalInstallments) || 0) > (Number(f.paidInstallments) || 0)).length
+        };
+    }, [financings]);
+
+    // Auto-provisionamento de parcelas de financiamento no mês ativo
+    useEffect(() => {
+        if (!financings || financings.length === 0) return;
+        const year = currentDate.getFullYear();
+        const month = currentDate.getMonth();
+
+        financings.forEach(fin => {
+            if (!fin.autoDebit) return;
+            const totalInst = Number(fin.totalInstallments) || 1;
+            const paidInst = Number(fin.paidInstallments) || 0;
+            if (paidInst >= totalInst) return;
+
+            const currentInstNumber = paidInst + 1;
+            const day = String(fin.dueDay || 10).padStart(2, '0');
+            const monthStr = String(month + 1).padStart(2, '0');
+            const targetDate = `${year}-${monthStr}-${day}`;
+            const installmentTag = `(Parcela ${currentInstNumber}/${totalInst})`;
+
+            const alreadyExists = transactions.some(t =>
+                t.financingId === fin.id &&
+                t.date &&
+                t.date.startsWith(`${year}-${monthStr}`)
+            );
+
+            if (!alreadyExists) {
+                const autoTx = {
+                    id: `tx_fin_${fin.id}_${year}_${monthStr}`,
+                    financingId: fin.id,
+                    type: 'saida',
+                    amount: Number(fin.installmentAmount) || 0,
+                    category: fin.type === 'veiculo' ? 'Transporte' : (fin.type === 'imovel' ? 'Casa' : 'Outros'),
+                    date: targetDate,
+                    description: `${fin.title} ${installmentTag}`,
+                    status: 'pago',
+                    accountId: fin.accountId || 'acc_main',
+                    paidBy: fin.paidBy || 'conjunto'
+                };
+                setTransactions(prev => [autoTx, ...prev]);
+            }
+        });
+    }, [currentDate, financings]);
+
+    // Handlers de Financiamentos & Contratos
+    const handleSaveFinancing = (e) => {
+        e.preventDefault();
+        const instAmt = parseFloat(newFinancingData.installmentAmount);
+        const totalInst = parseInt(newFinancingData.totalInstallments, 10);
+        const paidInst = parseInt(newFinancingData.paidInstallments, 10) || 0;
+        if (!newFinancingData.title.trim() || isNaN(instAmt) || instAmt <= 0 || isNaN(totalInst) || totalInst <= 0) {
+            showToast("Preencha o título, valor da parcela e total de parcelas válidos.");
+            return;
+        }
+
+        const newFin = {
+            id: 'fin_' + Date.now(),
+            title: newFinancingData.title.trim(),
+            type: newFinancingData.type || 'veiculo',
+            installmentAmount: instAmt,
+            totalInstallments: totalInst,
+            paidInstallments: Math.min(totalInst, paidInst),
+            dueDay: parseInt(newFinancingData.dueDay, 10) || 10,
+            accountId: newFinancingData.accountId || 'acc_main',
+            paidBy: newFinancingData.paidBy || 'conjunto',
+            interestRateAnnual: parseFloat(newFinancingData.interestRateAnnual) || null,
+            startDate: new Date().toISOString().split('T')[0],
+            icon: newFinancingData.icon || (newFinancingData.type === 'imovel' ? '🏠' : (newFinancingData.type === 'veiculo' ? '🚗' : '💳')),
+            autoDebit: true
+        };
+
+        setFinancings(prev => [newFin, ...prev]);
+        setNewFinancingData({
+            title: '',
+            type: 'veiculo',
+            installmentAmount: '',
+            totalInstallments: '',
+            paidInstallments: '0',
+            dueDay: '10',
+            accountId: 'acc_main',
+            paidBy: 'conjunto',
+            interestRateAnnual: '',
+            icon: '🚗',
+            autoDebit: true
+        });
+        setIsFinancingModalOpen(false);
+        showToast(`🚗 Financiamento "${newFin.title}" cadastrado com sucesso!`);
+    };
+
+    const handleDeleteFinancing = (id) => {
+        if (window.confirm("Deseja realmente remover este financiamento?")) {
+            setFinancings(prev => prev.filter(f => f.id !== id));
+            showToast("Financiamento removido.");
+        }
+    };
+
+    const handlePrepayInstallment = (financingId, count = 1) => {
+        setFinancings(prev => prev.map(f => {
+            if (f.id === financingId) {
+                const currentPaid = Number(f.paidInstallments) || 0;
+                const total = Number(f.totalInstallments) || 1;
+                const newPaid = Math.min(total, currentPaid + count);
+                const remaining = total - newPaid;
+
+                const amortTx = {
+                    id: 'tx_amort_' + Date.now(),
+                    type: 'saida',
+                    amount: (Number(f.installmentAmount) || 0) * count,
+                    category: f.type === 'veiculo' ? 'Transporte' : (f.type === 'imovel' ? 'Casa' : 'Outros'),
+                    date: new Date().toISOString().split('T')[0],
+                    description: `⚡ Amortização ${f.title} (${count} ${count > 1 ? 'parcelas antecipadas' : 'parcela antecipada'})`,
+                    status: 'pago',
+                    accountId: f.accountId || 'acc_main',
+                    paidBy: f.paidBy || 'conjunto'
+                };
+                setTransactions(tPrev => [amortTx, ...tPrev]);
+
+                showToast(`🎉 ${count} parcela(s) amortizada(s) com sucesso! Restam ${remaining} parcelas.`);
+                return {
+                    ...f,
+                    paidInstallments: newPaid
+                };
+            }
+            return f;
+        }));
+        setIsAmortizationModalOpen(false);
+    };
+
+    const handleAnalyzeContractWithAI = async () => {
+        if (!contractTextInput.trim() && !contractImageBase64) {
+            showToast("Cole o texto do contrato ou envie uma foto/imagem.");
+            return;
+        }
+        if (!geminiApiKey.trim()) {
+            showToast("Configure sua chave Gemini no FinBot primeiro.");
+            setIsApiKeyModalOpen(true);
+            return;
+        }
+
+        setIsAnalyzingContract(true);
+        setContractAnalysisResult(null);
+
+        try {
+            const promptInstruction = `Você é um perito financeiro especialista em contratos bancários e financiamentos de veículos e imóveis.
+Analise os dados deste contrato ou extrato e retorne APENAS um bloco JSON válido com a seguinte estrutura:
+\`\`\`json
+{
+  "institution": "Nome do Banco ou Financeira",
+  "asset": "Descrição do Bem (ex: Veículo Honda Civic ou Imóvel)",
+  "type": "veiculo",
+  "installmentAmount": 1250.00,
+  "totalInstallments": 48,
+  "paidInstallments": 14,
+  "remainingInstallments": 34,
+  "dueDay": 10,
+  "interestRateMonthly": 1.45,
+  "interestRateAnnual": 18.9,
+  "cetAnnual": 21.5,
+  "totalFinanced": 45000.00,
+  "totalToPay": 60000.00,
+  "totalInterestPayable": 15000.00,
+  "amortizationSavingsTips": "Dica prática de quanto o casal economiza adiantando parcelas de trás para frente.",
+  "summaryText": "Diagnóstico do contrato e avaliação das taxas em 2 parágrafos."
+}
+\`\`\``;
+
+            let parts = [];
+            if (contractImageBase64) {
+                const base64Data = contractImageBase64.split(',')[1] || contractImageBase64;
+                parts.push({
+                    inlineData: {
+                        mimeType: "image/jpeg",
+                        data: base64Data
+                    }
+                });
+            }
+            if (contractTextInput.trim()) {
+                parts.push({ text: `Dados do Contrato:\n${contractTextInput.trim()}` });
+            }
+            parts.push({ text: promptInstruction });
+
+            const payload = {
+                contents: [{ parts }],
+                generationConfig: {
+                    temperature: 0.2,
+                    maxOutputTokens: 1000
+                }
+            };
+
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${geminiApiKey.trim()}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const json = await res.json();
+            const rawText = json.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!rawText) throw new Error(json.error?.message || "Sem resposta da IA");
+
+            const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+            if (!jsonMatch) throw new Error("A IA não retornou um formato estruturado.");
+
+            const parsed = JSON.parse(jsonMatch[0]);
+            setContractAnalysisResult(parsed);
+            showToast("📄 Contrato analisado com sucesso pelo FinBot IA!");
+        } catch (err) {
+            console.error(err);
+            showToast("Erro ao analisar contrato: " + (err.message || "Tente novamente"));
+        } finally {
+            setIsAnalyzingContract(false);
+        }
+    };
+
+    const handleApplyContractAnalysisToForm = () => {
+        if (!contractAnalysisResult) return;
+        setNewFinancingData({
+            title: contractAnalysisResult.asset || contractAnalysisResult.institution || 'Financiamento Veículo',
+            type: contractAnalysisResult.type || 'veiculo',
+            installmentAmount: contractAnalysisResult.installmentAmount ? String(contractAnalysisResult.installmentAmount) : '',
+            totalInstallments: contractAnalysisResult.totalInstallments ? String(contractAnalysisResult.totalInstallments) : '48',
+            paidInstallments: contractAnalysisResult.paidInstallments ? String(contractAnalysisResult.paidInstallments) : '0',
+            dueDay: contractAnalysisResult.dueDay ? String(contractAnalysisResult.dueDay) : '10',
+            accountId: 'acc_main',
+            paidBy: 'conjunto',
+            interestRateAnnual: contractAnalysisResult.interestRateAnnual ? String(contractAnalysisResult.interestRateAnnual) : '',
+            icon: contractAnalysisResult.type === 'imovel' ? '🏠' : (contractAnalysisResult.type === 'veiculo' ? '🚗' : '💳'),
+            autoDebit: true
+        });
+        setIsContractAnalysisModalOpen(false);
+        setIsFinancingModalOpen(true);
+        showToast("Dados do contrato preenchidos automaticamente no formulário!");
+    };
 
     // Handlers para Cofrinhos & Sonhos do Casal
     const handleSaveSavingsGoal = (e) => {
@@ -3541,6 +3854,12 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                         <Sparkles size={14} /> Projeção 6 Meses
                                     </button>
                                     <button
+                                        onClick={() => setAnalysisView('financiamentos')}
+                                        className={`px-4 py-2.5 text-xs font-bold rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 ${analysisView === 'financiamentos' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
+                                    >
+                                        <Car size={14} className="text-blue-400" /> Financiamentos & Dívidas ({financingsSummary.activeCount})
+                                    </button>
+                                    <button
                                         onClick={() => setIsFinbotChatOpen(true)}
                                         className="px-4 py-2.5 text-xs font-black rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md hover:from-purple-700 hover:to-indigo-700 active:scale-95"
                                     >
@@ -4331,6 +4650,241 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                     </div>
                                                 );
                                             })}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* VISUALIZAÇÃO: FINANCIAMENTOS & DÍVIDAS COM DÉBITO AUTOMÁTICO */}
+                                {analysisView === 'financiamentos' && (
+                                    <div className="space-y-6 animate-in fade-in duration-300">
+                                        {/* BANNER PRINCIPAL DE FINANCIAMENTOS */}
+                                        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden border border-indigo-900/40">
+                                            <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                                                <div>
+                                                    <div className="flex items-center gap-2 mb-1.5">
+                                                        <span className="text-2xl">🚗</span>
+                                                        <span className="text-xs font-black uppercase tracking-wider text-blue-300">Gestão de Bens & Contratos</span>
+                                                    </div>
+                                                    <h3 className="text-2xl sm:text-3xl font-black tracking-tight">Financiamentos & Débito Automático</h3>
+                                                    <p className="text-xs text-blue-200/80 font-medium mt-1 max-w-xl">
+                                                        Acompanhamento completo da quitação de veículos, imóveis e empréstimos. Parcelas lançadas automaticamente mês a mês com amortização inteligente.
+                                                    </p>
+                                                </div>
+
+                                                <div className="flex flex-wrap gap-2.5 shrink-0">
+                                                    <button
+                                                        onClick={() => setIsFinancingModalOpen(true)}
+                                                        className="px-4 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl text-xs font-black transition flex items-center gap-2 shadow-lg shadow-blue-600/30 active:scale-95"
+                                                    >
+                                                        <Plus size={16} /> Novo Financiamento
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            setContractAnalysisResult(null);
+                                                            setContractImageBase64(null);
+                                                            setContractTextInput('');
+                                                            setIsContractAnalysisModalOpen(true);
+                                                        }}
+                                                        className="px-4 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-2xl text-xs font-black transition flex items-center gap-2 shadow-lg shadow-purple-600/30 active:scale-95"
+                                                    >
+                                                        <Sparkles size={16} className="text-amber-300" /> Analisar Contrato com IA
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {/* RESUMO EXECUTIVO (4 STATS CARDS) */}
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-6 border-t border-white/10">
+                                                <div className="bg-white/5 backdrop-blur-md p-3.5 rounded-2xl border border-white/10">
+                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Financiado</span>
+                                                    <p className="text-base sm:text-lg font-black text-white mt-0.5">{formatCurrency(financingsSummary.totalFinanced)}</p>
+                                                </div>
+                                                <div className="bg-white/5 backdrop-blur-md p-3.5 rounded-2xl border border-white/10">
+                                                    <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block">Total Já Pago</span>
+                                                    <p className="text-base sm:text-lg font-black text-emerald-400 mt-0.5">{formatCurrency(financingsSummary.totalPaid)} ({financingsSummary.percentPaid}%)</p>
+                                                </div>
+                                                <div className="bg-white/5 backdrop-blur-md p-3.5 rounded-2xl border border-white/10">
+                                                    <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider block">Saldo Restante</span>
+                                                    <p className="text-base sm:text-lg font-black text-rose-300 mt-0.5">{formatCurrency(financingsSummary.totalRemaining)}</p>
+                                                </div>
+                                                <div className="bg-white/5 backdrop-blur-md p-3.5 rounded-2xl border border-white/10">
+                                                    <span className="text-[10px] font-bold text-blue-300 uppercase tracking-wider block">Parcelas/Mês Total</span>
+                                                    <p className="text-base sm:text-lg font-black text-blue-200 mt-0.5">{formatCurrency(financingsSummary.monthlyInstallmentsTotal)}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* LISTA DE FINANCIAMENTOS ATIVOS */}
+                                        <div className="space-y-4">
+                                            <div className="flex justify-between items-center px-1">
+                                                <h4 className="text-base font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                                    Bens & Financiamentos Cadastrados
+                                                    <span className="text-xs font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
+                                                        {financingsSummary.list.length}
+                                                    </span>
+                                                </h4>
+                                            </div>
+
+                                            {financingsSummary.list.length === 0 ? (
+                                                <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 space-y-3">
+                                                    <div className="w-16 h-16 bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mx-auto text-3xl">
+                                                        🚗
+                                                    </div>
+                                                    <h4 className="font-extrabold text-slate-800 dark:text-white text-base">Nenhum financiamento cadastrado ainda</h4>
+                                                    <p className="text-xs text-slate-400 max-w-md mx-auto">
+                                                        Cadastre o financiamento do seu carro, moto, imóvel ou envie uma foto do contrato para a IA calcular todas as parcelas e juros automaticamente!
+                                                    </p>
+                                                    <div className="flex justify-center gap-3 pt-2">
+                                                        <button
+                                                            onClick={() => setIsFinancingModalOpen(true)}
+                                                            className="px-4 py-2.5 bg-blue-600 text-white text-xs font-bold rounded-2xl"
+                                                        >
+                                                            + Cadastrar Manualmente
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setIsContractAnalysisModalOpen(true)}
+                                                            className="px-4 py-2.5 bg-purple-600 text-white text-xs font-bold rounded-2xl"
+                                                        >
+                                                            📄 Enviar Contrato
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                                    {financingsSummary.list.map(fin => {
+                                                        const totalInst = Number(fin.totalInstallments) || 1;
+                                                        const paidInst = Math.min(totalInst, Number(fin.paidInstallments) || 0);
+                                                        const remInst = totalInst - paidInst;
+                                                        const pct = Math.min(100, Math.round((paidInst / totalInst) * 100));
+                                                        const remAmount = (Number(fin.installmentAmount) || 0) * remInst;
+                                                        const isFullyPaid = paidInst >= totalInst;
+
+                                                        return (
+                                                            <div
+                                                                key={fin.id}
+                                                                className={`p-6 rounded-3xl border transition-all flex flex-col justify-between ${
+                                                                    isFullyPaid
+                                                                        ? 'bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/20 border-emerald-300 dark:border-emerald-800/80 shadow-md'
+                                                                        : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-md'
+                                                                }`}
+                                                            >
+                                                                <div>
+                                                                    {/* Cabeçalho do Card */}
+                                                                    <div className="flex justify-between items-start mb-4">
+                                                                        <div className="flex items-center gap-3">
+                                                                            <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/60 flex items-center justify-center text-2xl shadow-inner shrink-0">
+                                                                                {fin.icon || '🚗'}
+                                                                            </div>
+                                                                            <div>
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <h5 className="font-extrabold text-slate-800 dark:text-white text-base leading-tight">
+                                                                                        {fin.title}
+                                                                                    </h5>
+                                                                                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
+                                                                                        {fin.type === 'imovel' ? 'Imóvel' : fin.type === 'veiculo' ? 'Veículo' : 'Financiamento'}
+                                                                                    </span>
+                                                                                </div>
+                                                                                <span className="text-xs text-slate-400 font-medium">
+                                                                                    {fin.paidBy === 'esposa' ? 'Pago pela Esposa' : fin.paidBy === 'marido' ? 'Pago por Você' : 'Dividido pelo Casal (50/50)'}
+                                                                                </span>
+                                                                            </div>
+                                                                        </div>
+
+                                                                        <button
+                                                                            onClick={() => handleDeleteFinancing(fin.id)}
+                                                                            className="p-2 text-slate-300 hover:text-rose-500 rounded-xl transition"
+                                                                            title="Remover Financiamento"
+                                                                        >
+                                                                            <Trash2 size={16} />
+                                                                        </button>
+                                                                    </div>
+
+                                                                    {/* Dados da Parcela */}
+                                                                    <div className="grid grid-cols-2 gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800/80 mb-4">
+                                                                        <div>
+                                                                            <span className="text-[10px] font-bold text-slate-400 uppercase block">Valor da Parcela</span>
+                                                                            <p className="text-lg font-black text-slate-800 dark:text-white mt-0.5">
+                                                                                {formatCurrency(fin.installmentAmount)}
+                                                                            </p>
+                                                                            <span className="text-[10px] text-blue-600 dark:text-blue-400 font-extrabold flex items-center gap-1 mt-0.5">
+                                                                                <Clock size={11} /> Todo dia {fin.dueDay}
+                                                                            </span>
+                                                                        </div>
+                                                                        <div>
+                                                                            <span className="text-[10px] font-bold text-slate-400 uppercase block">Saldo Devedor</span>
+                                                                            <p className="text-lg font-black text-rose-600 dark:text-rose-400 mt-0.5">
+                                                                                {formatCurrency(remAmount)}
+                                                                            </p>
+                                                                            <span className="text-[10px] text-slate-400 font-medium block mt-0.5">
+                                                                                Faltam {remInst} parcelas
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* Barra de Progresso de Quitação */}
+                                                                    <div className="space-y-1.5 mb-4">
+                                                                        <div className="flex justify-between text-xs font-bold">
+                                                                            <span className="text-slate-500 dark:text-slate-400">
+                                                                                {paidInst} de {totalInst} parcelas pagas
+                                                                            </span>
+                                                                            <span className="font-black text-slate-800 dark:text-white">
+                                                                                {pct}% Quitado
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="w-full bg-slate-200 dark:bg-slate-800 h-3 rounded-full overflow-hidden">
+                                                                            <div
+                                                                                className={`h-full rounded-full transition-all duration-700 ${
+                                                                                    isFullyPaid ? 'bg-emerald-500' : 'bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600'
+                                                                                }`}
+                                                                                style={{ width: `${pct}%` }}
+                                                                            ></div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Ações Rápidas & Amortização */}
+                                                                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex gap-2">
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            setSelectedFinancingForAmortization(fin);
+                                                                            setAmortizationPrepayCount(1);
+                                                                            setIsAmortizationModalOpen(true);
+                                                                        }}
+                                                                        disabled={isFullyPaid}
+                                                                        className="flex-1 py-2.5 px-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 text-white text-xs font-black rounded-2xl transition flex items-center justify-center gap-1.5 shadow-sm active:scale-95"
+                                                                    >
+                                                                        <Zap size={14} className="text-yellow-300" /> Simular Amortização
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handlePrepayInstallment(fin.id, 1)}
+                                                                        disabled={isFullyPaid}
+                                                                        className="py-2.5 px-3.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50 text-slate-700 dark:text-slate-200 text-xs font-black rounded-2xl transition flex items-center justify-center gap-1 active:scale-95"
+                                                                        title="Avançar 1 parcela como paga"
+                                                                    >
+                                                                        <Plus size={14} /> +1 Parcela
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* CARD EDUCATIVO: COMO ECONOMIZAR COM AMORTIZAÇÃO */}
+                                        <div className="bg-gradient-to-br from-amber-500/10 via-orange-500/10 to-purple-500/10 rounded-3xl p-6 border border-amber-200/50 dark:border-amber-900/30">
+                                            <div className="flex items-start gap-4">
+                                                <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center text-2xl shrink-0 shadow-md">
+                                                    💡
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <h4 className="font-black text-slate-800 dark:text-white text-base">
+                                                        Como quitar seu financiamento pela metade do tempo e economizar juros?
+                                                    </h4>
+                                                    <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                                        Quando você faz uma <strong>amortização extraordinária</strong> abatendo parcelas de trás para frente (pelo saldo devedor puro), você <strong>elimina todos os juros futuros</strong> embutidos naquela parcela. Por exemplo, uma parcela de R$ 1.250 pode sair por menos de R$ 400 se for paga antecipada!
+                                                    </p>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 )}
@@ -6100,6 +6654,424 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                     <Send size={16} />
                                 </button>
                             </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* MODAL 1: NOVO FINANCIAMENTO */}
+                {isFinancingModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+                        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsFinancingModalOpen(false)}></div>
+                        <div className="relative bg-white dark:bg-slate-900 w-full max-w-lg rounded-t-3xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-full duration-300 max-h-[90vh] overflow-y-auto">
+                            <div className="flex justify-between items-center mb-6">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center text-xl shadow-inner">
+                                        🚗
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-black text-slate-800 dark:text-white">Cadastrar Financiamento</h2>
+                                        <p className="text-xs text-slate-400">Contrato com parcelas e débito automático</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setIsFinancingModalOpen(false)} className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 rounded-2xl">
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            <form onSubmit={handleSaveFinancing} className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Título do Bem ou Contrato</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={newFinancingData.title}
+                                        onChange={(e) => setNewFinancingData({ ...newFinancingData, title: e.target.value })}
+                                        placeholder="Ex: Financiamento Honda Civic, Apartamento..."
+                                        className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Tipo de Bem</label>
+                                        <select
+                                            value={newFinancingData.type}
+                                            onChange={(e) => {
+                                                const type = e.target.value;
+                                                const icon = type === 'imovel' ? '🏠' : (type === 'veiculo' ? '🚗' : '💳');
+                                                setNewFinancingData({ ...newFinancingData, type, icon });
+                                            }}
+                                            className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                        >
+                                            <option value="veiculo">🚗 Veículo (Carro/Moto)</option>
+                                            <option value="imovel">🏠 Imóvel (Casa/Apê)</option>
+                                            <option value="emprestimo">💳 Empréstimo</option>
+                                            <option value="outro">📦 Outro Bem</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Valor da Parcela (R$)</label>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            required
+                                            value={newFinancingData.installmentAmount}
+                                            onChange={(e) => setNewFinancingData({ ...newFinancingData, installmentAmount: e.target.value })}
+                                            placeholder="Ex: 1250.00"
+                                            className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Total Parcelas</label>
+                                        <input
+                                            type="number"
+                                            required
+                                            value={newFinancingData.totalInstallments}
+                                            onChange={(e) => setNewFinancingData({ ...newFinancingData, totalInstallments: e.target.value })}
+                                            placeholder="Ex: 48"
+                                            className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Já Pagas</label>
+                                        <input
+                                            type="number"
+                                            value={newFinancingData.paidInstallments}
+                                            onChange={(e) => setNewFinancingData({ ...newFinancingData, paidInstallments: e.target.value })}
+                                            placeholder="Ex: 14"
+                                            className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Dia Débito</label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="31"
+                                            value={newFinancingData.dueDay}
+                                            onChange={(e) => setNewFinancingData({ ...newFinancingData, dueDay: e.target.value })}
+                                            placeholder="Ex: 10"
+                                            className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Conta Debitada</label>
+                                        <select
+                                            value={newFinancingData.accountId}
+                                            onChange={(e) => setNewFinancingData({ ...newFinancingData, accountId: e.target.value })}
+                                            className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                        >
+                                            {accounts.map(acc => (
+                                                <option key={acc.id} value={acc.id}>{acc.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Quem Paga</label>
+                                        <select
+                                            value={newFinancingData.paidBy}
+                                            onChange={(e) => setNewFinancingData({ ...newFinancingData, paidBy: e.target.value })}
+                                            className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                        >
+                                            <option value="conjunto">Dividido (50/50)</option>
+                                            <option value="marido">Você</option>
+                                            <option value="esposa">Esposa</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="p-3 bg-blue-50 dark:bg-blue-950/40 rounded-2xl border border-blue-100 dark:border-blue-900/40 flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <Clock size={18} className="text-blue-600" />
+                                        <div>
+                                            <p className="text-xs font-bold text-slate-800 dark:text-white">Débito Automático Mensal</p>
+                                            <p className="text-[10px] text-slate-400">Lançar parcela todo mês no fluxo de caixa</p>
+                                        </div>
+                                    </div>
+                                    <input
+                                        type="checkbox"
+                                        checked={newFinancingData.autoDebit}
+                                        onChange={(e) => setNewFinancingData({ ...newFinancingData, autoDebit: e.target.checked })}
+                                        className="w-5 h-5 text-blue-600 rounded-lg"
+                                    />
+                                </div>
+
+                                <button
+                                    type="submit"
+                                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl text-sm shadow-lg shadow-blue-600/30 transition active:scale-98 mt-2"
+                                >
+                                    Salvar Financiamento
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* MODAL 2: ANALISADOR DE CONTRATO COM FINBOT IA */}
+                {isContractAnalysisModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+                        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsContractAnalysisModalOpen(false)}></div>
+                        <div className="relative bg-white dark:bg-slate-900 w-full max-w-xl rounded-t-3xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-full duration-300 max-h-[90vh] overflow-y-auto">
+                            <div className="flex justify-between items-center mb-6">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-2xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 flex items-center justify-center text-xl shadow-inner">
+                                        📄
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                            Análise de Contrato
+                                            <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300">
+                                                IA Gemini
+                                            </span>
+                                        </h2>
+                                        <p className="text-xs text-slate-400">Descubra quanto vai pagar até o final e economize juros</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setIsContractAnalysisModalOpen(false)} className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 rounded-2xl">
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            {!contractAnalysisResult ? (
+                                <div className="space-y-4">
+                                    {/* Upload de Foto do Contrato */}
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-2">
+                                            1. Enviar Foto do Contrato ou Extrato Bancário
+                                        </label>
+                                        <div className="border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl p-6 text-center hover:border-purple-500 transition relative bg-slate-50 dark:bg-slate-950/50">
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                onChange={(e) => {
+                                                    const file = e.target.files[0];
+                                                    if (!file) return;
+                                                    const reader = new FileReader();
+                                                    reader.onload = (event) => setContractImageBase64(event.target.result);
+                                                    reader.readAsDataURL(file);
+                                                }}
+                                                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                                            />
+                                            {contractImageBase64 ? (
+                                                <div className="space-y-2">
+                                                    <div className="w-16 h-16 rounded-2xl mx-auto overflow-hidden shadow-md">
+                                                        <img src={contractImageBase64} alt="Preview" className="w-full h-full object-cover" />
+                                                    </div>
+                                                    <p className="text-xs font-black text-emerald-600">Foto do contrato anexada!</p>
+                                                    <span className="text-[10px] text-slate-400">Toque para trocar a imagem</span>
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-2">
+                                                    <div className="w-12 h-12 rounded-full bg-purple-50 dark:bg-purple-950 text-purple-600 flex items-center justify-center mx-auto text-2xl">
+                                                        📸
+                                                    </div>
+                                                    <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                                                        Tire uma foto ou envie a imagem do contrato
+                                                    </p>
+                                                    <span className="text-[10px] text-slate-400">Suporta fotos de contratos e extratos bancários</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Ou Colar Texto do Contrato */}
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1">
+                                            2. Ou cole os dados/texto do contrato aqui
+                                        </label>
+                                        <textarea
+                                            rows={3}
+                                            value={contractTextInput}
+                                            onChange={(e) => setContractTextInput(e.target.value)}
+                                            placeholder="Ex: Financiamento Santander Carro, 48x de R$ 1.250, taxa 1,49% a.m., faltam 34 parcelas..."
+                                            className="w-full text-xs font-medium text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-purple-500 resize-none shadow-inner"
+                                        />
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        disabled={isAnalyzingContract || (!contractTextInput.trim() && !contractImageBase64)}
+                                        onClick={handleAnalyzeContractWithAI}
+                                        className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 text-white font-black py-4 rounded-2xl text-sm shadow-lg shadow-purple-600/30 transition flex items-center justify-center gap-2 active:scale-98"
+                                    >
+                                        {isAnalyzingContract ? (
+                                            <>
+                                                <Loader2 size={18} className="animate-spin" />
+                                                FinBot IA Analisando Contrato e Cláusulas...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Sparkles size={18} className="text-amber-300" />
+                                                Analisar com Inteligência Artificial
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            ) : (
+                                /* RESULTADO DO RAIO-X DO CONTRATO */
+                                <div className="space-y-4 animate-in fade-in">
+                                    <div className="bg-gradient-to-r from-purple-900 to-indigo-900 text-white p-5 rounded-3xl space-y-3">
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <span className="text-[10px] font-black uppercase tracking-wider text-purple-300">
+                                                    {contractAnalysisResult.institution || 'Banco Financiador'}
+                                                </span>
+                                                <h3 className="text-xl font-black">{contractAnalysisResult.asset || 'Financiamento'}</h3>
+                                            </div>
+                                            <span className="text-2xl">🚗</span>
+                                        </div>
+
+                                        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/10 text-center">
+                                            <div className="bg-white/10 p-2.5 rounded-2xl">
+                                                <span className="text-[9px] uppercase font-bold text-slate-300 block">Parcela</span>
+                                                <p className="text-sm font-black text-white">{formatCurrency(contractAnalysisResult.installmentAmount)}</p>
+                                            </div>
+                                            <div className="bg-white/10 p-2.5 rounded-2xl">
+                                                <span className="text-[9px] uppercase font-bold text-slate-300 block">Total a Pagar</span>
+                                                <p className="text-sm font-black text-rose-300">{formatCurrency(contractAnalysisResult.totalToPay || (contractAnalysisResult.installmentAmount * contractAnalysisResult.totalInstallments))}</p>
+                                            </div>
+                                            <div className="bg-white/10 p-2.5 rounded-2xl">
+                                                <span className="text-[9px] uppercase font-bold text-slate-300 block">Juros Totais</span>
+                                                <p className="text-sm font-black text-amber-300">{formatCurrency(contractAnalysisResult.totalInterestPayable)}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Dica de Amortização da IA */}
+                                    <div className="p-4 bg-amber-50 dark:bg-amber-950/40 rounded-2xl border border-amber-200 dark:border-amber-900/40 space-y-1.5">
+                                        <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300 font-extrabold text-xs">
+                                            <Zap size={16} /> Estratégia de Economia por Amortização:
+                                        </div>
+                                        <p className="text-xs text-amber-900 dark:text-amber-200/90 leading-relaxed font-medium">
+                                            {contractAnalysisResult.amortizationSavingsTips || "Amortizar parcelas de trás para frente elimina todo o juro embutido e reduz drasticamente o tempo total do financiamento."}
+                                        </p>
+                                    </div>
+
+                                    {/* Resumo do Diagnóstico */}
+                                    <div className="p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-100 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        <p className="font-bold text-slate-800 dark:text-white mb-1">Diagnóstico do FinBot:</p>
+                                        {contractAnalysisResult.summaryText}
+                                    </div>
+
+                                    {/* Botões de Ação */}
+                                    <div className="flex gap-2 pt-2">
+                                        <button
+                                            type="button"
+                                            onClick={handleApplyContractAnalysisToForm}
+                                            className="flex-1 py-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-2xl shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2 active:scale-95"
+                                        >
+                                            <Check size={16} /> Cadastrar Financiamento no App com 1 Toque
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setContractAnalysisResult(null)}
+                                            className="p-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300 rounded-2xl text-xs font-bold transition"
+                                        >
+                                            Reanalisar
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* MODAL 3: SIMULADOR DE AMORTIZAÇÃO */}
+                {isAmortizationModalOpen && selectedFinancingForAmortization && (
+                    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+                        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsAmortizationModalOpen(false)}></div>
+                        <div className="relative bg-white dark:bg-slate-900 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-full duration-300">
+                            <div className="flex justify-between items-center mb-6">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-2xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 flex items-center justify-center text-xl shadow-inner">
+                                        ⚡
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-black text-slate-800 dark:text-white">Simulador de Amortização</h2>
+                                        <p className="text-xs text-slate-400">{selectedFinancingForAmortization.title}</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setIsAmortizationModalOpen(false)} className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 rounded-2xl">
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            {(() => {
+                                const fin = selectedFinancingForAmortization;
+                                const total = Number(fin.totalInstallments) || 1;
+                                const paid = Number(fin.paidInstallments) || 0;
+                                const remaining = Math.max(1, total - paid);
+                                const count = Math.min(remaining, Math.max(1, amortizationPrepayCount));
+                                const instAmt = Number(fin.installmentAmount) || 0;
+                                const nominalTotal = instAmt * count;
+                                // Estimativa de desconto em juros amortizando a última parcela (~45% a 65% de desconto de juros na ponta final)
+                                const estimatedInterestDiscount = nominalTotal * 0.45;
+                                const estimatedPresentValue = nominalTotal - estimatedInterestDiscount;
+
+                                return (
+                                    <div className="space-y-4">
+                                        <div>
+                                            <div className="flex justify-between items-center mb-2">
+                                                <label className="text-xs font-bold text-slate-400 uppercase">
+                                                    Quantas parcelas antecipar?
+                                                </label>
+                                                <span className="text-sm font-black text-blue-600 dark:text-blue-400">
+                                                    {count} {count > 1 ? 'parcelas' : 'parcela'}
+                                                </span>
+                                            </div>
+                                            <input
+                                                type="range"
+                                                min="1"
+                                                max={remaining}
+                                                value={count}
+                                                onChange={(e) => setAmortizationPrepayCount(parseInt(e.target.value, 10))}
+                                                className="w-full h-2 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                                            />
+                                            <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                                                <span>1 parcela</span>
+                                                <span>Restam {remaining} parcelas</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 space-y-2.5 text-xs">
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-500">Valor Nominal das Parcelas:</span>
+                                                <span className="font-bold text-slate-700 dark:text-slate-300">{formatCurrency(nominalTotal)}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-emerald-600 font-bold">Economia Estimada em Juros:</span>
+                                                <span className="font-black text-emerald-600">-{formatCurrency(estimatedInterestDiscount)}</span>
+                                            </div>
+                                            <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center text-sm font-black">
+                                                <span className="text-slate-800 dark:text-white">Você paga apenas (saldo devedor):</span>
+                                                <span className="text-purple-600 dark:text-purple-400 text-base">{formatCurrency(estimatedPresentValue)}</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 rounded-2xl border border-emerald-200 dark:border-emerald-900/40 text-[11px] text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+                                            <Sparkles size={16} className="shrink-0" />
+                                            <span>
+                                                Ao antecipar <strong>{count} {count > 1 ? 'parcelas' : 'parcela'}</strong>, o financiamento termina <strong>{count} {count > 1 ? 'meses' : 'mês'} antes</strong>!
+                                            </span>
+                                        </div>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => handlePrepayInstallment(fin.id, count)}
+                                            className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-black py-4 rounded-2xl text-sm shadow-lg shadow-purple-600/30 transition flex items-center justify-center gap-2 active:scale-98"
+                                        >
+                                            <Zap size={16} className="text-amber-300" />
+                                            Abater {count} {count > 1 ? 'Parcelas' : 'Parcela'} Agora
+                                        </button>
+                                    </div>
+                                );
+                            })()}
                         </div>
                     </div>
                 )}
