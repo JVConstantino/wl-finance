@@ -228,7 +228,7 @@ let globalCurrency = 'USD';
 try {
     const saved = localStorage.getItem('fp_currency');
     if (saved) globalCurrency = JSON.parse(saved);
-} catch (e) {}
+} catch (e) { }
 
 export const formatCurrency = (value, currency = null) => {
     const curr = currency || globalCurrency || 'USD';
@@ -333,12 +333,12 @@ export default function App() {
     const [familyCodeInput, setFamilyCodeInput] = useState('');
     const [familyNameInput, setFamilyNameInput] = useState('');
     const [activeFamilyCode, setActiveFamilyCode] = useState(() => {
-        try { return localStorage.getItem('fp_family_code') || null; } catch(e) { return null; }
+        try { return localStorage.getItem('fp_family_code') || null; } catch (e) { return null; }
     });
     const [familyData, setFamilyData] = useState(null);
     const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
     const [geminiApiKey, setGeminiApiKey] = useState(() => {
-        try { return localStorage.getItem('fp_gemini_key') || ''; } catch(e) { return ''; }
+        try { return localStorage.getItem('fp_gemini_key') || ''; } catch (e) { return ''; }
     });
     const [apiKeyInput, setApiKeyInput] = useState('');
     const [isPayInvoiceModalOpen, setIsPayInvoiceModalOpen] = useState(false);
@@ -654,7 +654,7 @@ export default function App() {
                 setIsRefreshing(true);
                 setPullY(65);
                 if (navigator.vibrate) {
-                    try { navigator.vibrate(25); } catch (e) {}
+                    try { navigator.vibrate(25); } catch (e) { }
                 }
                 try {
                     if (supabaseUser) {
@@ -709,12 +709,12 @@ export default function App() {
         const newPin = enteredPin + digit;
         setEnteredPin(newPin);
         if (navigator.vibrate) {
-            try { navigator.vibrate(15); } catch(e) {}
+            try { navigator.vibrate(15); } catch (e) { }
         }
         if (newPin.length === 4) {
             if (newPin === appPin) {
                 if (navigator.vibrate) {
-                    try { navigator.vibrate([25, 40, 25]); } catch(e) {}
+                    try { navigator.vibrate([25, 40, 25]); } catch (e) { }
                 }
                 setTimeout(() => {
                     setIsAppLocked(false);
@@ -724,7 +724,7 @@ export default function App() {
             } else {
                 setPinError(true);
                 if (navigator.vibrate) {
-                    try { navigator.vibrate([80, 40, 80]); } catch(e) {}
+                    try { navigator.vibrate([80, 40, 80]); } catch (e) { }
                 }
                 setTimeout(() => {
                     setEnteredPin('');
@@ -737,7 +737,7 @@ export default function App() {
     const handlePinDelete = () => {
         setEnteredPin(prev => prev.slice(0, -1));
         if (navigator.vibrate) {
-            try { navigator.vibrate(10); } catch(e) {}
+            try { navigator.vibrate(10); } catch (e) { }
         }
     };
 
@@ -1314,7 +1314,7 @@ export default function App() {
             const cat = (t.category || '').toLowerCase();
             const desc = (t.description || '').toLowerCase();
             return cat.includes('aliment') || cat.includes('mercado') || cat.includes('supermercado') || cat.includes('grocery') ||
-                   desc.includes('costco') || desc.includes('walmart') || desc.includes('target') || desc.includes('publix') || desc.includes('trader') || desc.includes('aldi') || desc.includes('kroger') || desc.includes('sam');
+                desc.includes('costco') || desc.includes('walmart') || desc.includes('target') || desc.includes('publix') || desc.includes('trader') || desc.includes('aldi') || desc.includes('kroger') || desc.includes('sam');
         };
         const currentMonthGrocery = (monthlyTransactions || []).filter(t => t.type === 'saida' && isGrocery(t));
         const totalCurrent = currentMonthGrocery.reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
@@ -1590,21 +1590,54 @@ Mensagem do casal:
         localStorage.setItem('fp_plaid_config', JSON.stringify(plaidConfig));
     }, [plaidConfig]);
 
-    const handleSyncPlaidCard = (cardId) => {
+    const handleSyncPlaidCard = async (cardId, explicitAccessToken) => {
         setIsSyncingPlaid(true);
+        const card = connectedCards.find(c => c.id === cardId);
+        const ownerName = card?.owner === 'marido' ? 'Marido' : (card?.owner === 'esposa' ? 'Esposa' : 'Conjunto');
+        const token = explicitAccessToken || card?.accessToken;
+
+        if (token) {
+            try {
+                const res = await fetch('/api/plaid/sync-transactions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        access_token: token,
+                        owner: card?.owner || 'conjunto',
+                        customClientId: plaidConfig.clientId || undefined,
+                        customSecret: plaidConfig.secret || undefined,
+                        customEnv: plaidConfig.environment || 'sandbox'
+                    })
+                });
+
+                const data = await res.json();
+                if (res.ok && data.transactions && data.transactions.length > 0) {
+                    setTransactions(prev => {
+                        const existingIds = new Set(prev.map(t => t.id));
+                        const newOnes = data.transactions.filter(t => !existingIds.has(t.id));
+                        return [...newOnes, ...prev];
+                    });
+                    setConnectedCards(prev => prev.map(c => c.id === cardId ? { ...c, lastSync: 'Agora mesmo' } : c));
+                    showToast(`✅ ${data.transactions.length} transações sincronizadas do ${card?.institution || ''}!`);
+                    setIsSyncingPlaid(false);
+                    return;
+                }
+            } catch (err) {
+                console.error("Erro na sincronização da API Plaid:", err);
+            }
+        }
+
+        // Simulação instantânea caso ainda não tenha chave de produção
         setTimeout(() => {
             setIsSyncingPlaid(false);
-            const card = connectedCards.find(c => c.id === cardId);
-            const ownerName = card?.owner === 'marido' ? 'Marido' : (card?.owner === 'esposa' ? 'Esposa' : 'Conjunto');
-            
-            // Simula a captura instantânea de compras recentes no cartão
             const sampleExpenses = [
-                { desc: 'Whole Foods Market', amount: 68.40, cat: 'Alimentação' },
+                { desc: 'Whole Foods Market', amount: 68.40, cat: 'Mercado' },
                 { desc: 'Chevron Gas Station', amount: 45.00, cat: 'Transporte' },
+                { desc: 'Starbucks Coffee', amount: 9.75, cat: 'Alimentação' },
                 { desc: 'Target Store', amount: 32.15, cat: 'Outros' }
             ];
             const randomExpense = sampleExpenses[Math.floor(Math.random() * sampleExpenses.length)];
-            
+
             const newSyncTx = {
                 id: 'tx_plaid_' + Date.now(),
                 type: 'saida',
@@ -1616,11 +1649,102 @@ Mensagem do casal:
                 accountId: 'acc_credit',
                 paidBy: card?.owner || 'conjunto'
             };
-            
+
             setTransactions(prev => [newSyncTx, ...prev]);
             setConnectedCards(prev => prev.map(c => c.id === cardId ? { ...c, lastSync: 'Agora mesmo', balance: Math.max(0, (Number(c.balance) || 0) + randomExpense.amount) } : c));
             showToast(`✅ Cartão ${card?.institution || ''} (${ownerName}) sincronizado! Nova compra detectada.`);
         }, 1200);
+    };
+
+    const handleOpenOfficialPlaidLink = async (owner = 'marido') => {
+        setIsSyncingPlaid(true);
+        try {
+            if (!window.Plaid) {
+                await new Promise((resolve, reject) => {
+                    const script = document.createElement('script');
+                    script.src = 'https://cdn.plaid.com/link/v2/stable/link-initialize.js';
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    document.head.appendChild(script);
+                });
+            }
+
+            const tokenRes = await fetch('/api/plaid/create-link-token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: currentUser?.id || 'wl_user_' + Date.now(),
+                    customClientId: plaidConfig.clientId || undefined,
+                    customSecret: plaidConfig.secret || undefined,
+                    customEnv: plaidConfig.environment || 'sandbox'
+                })
+            });
+
+            const tokenData = await tokenRes.json();
+
+            if (!tokenRes.ok || !tokenData.link_token) {
+                throw new Error(tokenData.message || tokenData.error || 'Configure suas chaves do Plaid para conectar ao banco oficial.');
+            }
+
+            const handler = window.Plaid.create({
+                token: tokenData.link_token,
+                onSuccess: async (public_token, metadata) => {
+                    showToast("Conectando ao banco seguro...");
+                    try {
+                        const exchangeRes = await fetch('/api/plaid/exchange-token', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                public_token,
+                                customClientId: plaidConfig.clientId || undefined,
+                                customSecret: plaidConfig.secret || undefined,
+                                customEnv: plaidConfig.environment || 'sandbox'
+                            })
+                        });
+                        const exchangeData = await exchangeRes.json();
+
+                        const instName = metadata.institution?.name || 'Banco Conectado';
+                        const firstAcc = exchangeData.accounts?.[0] || metadata.accounts?.[0] || {};
+                        const newCard = {
+                            id: 'card_plaid_' + Date.now(),
+                            institution: instName,
+                            mask: firstAcc.mask || '••••',
+                            type: firstAcc.subtype === 'credit card' ? 'credit' : 'banco',
+                            owner: owner,
+                            accessToken: exchangeData.access_token,
+                            itemId: exchangeData.item_id,
+                            balance: Number(firstAcc.balances?.current) || 0,
+                            lastSync: 'Agora mesmo',
+                            status: 'active',
+                            logo: '💳',
+                            color: 'from-blue-700 to-indigo-900'
+                        };
+
+                        setConnectedCards(prev => [...prev, newCard]);
+                        setPlaidActiveTab('cards');
+                        showToast(`🎉 ${instName} vinculado com sucesso!`);
+
+                        if (exchangeData.access_token) {
+                            handleSyncPlaidCard(newCard.id, exchangeData.access_token);
+                        }
+                    } catch (err) {
+                        console.error('Erro no exchange:', err);
+                        showToast("Erro ao finalizar conexão bancária.");
+                    }
+                },
+                onExit: (err, metadata) => {
+                    setIsSyncingPlaid(false);
+                    if (err) console.error('Plaid Link exit with error:', err);
+                }
+            });
+
+            handler.open();
+        } catch (err) {
+            console.error('Erro Plaid Link:', err);
+            showToast(err.message || "Configure suas chaves do Plaid na aba 'Plaid API'.");
+        } finally {
+            setIsSyncingPlaid(false);
+        }
     };
 
     const handleAddConnectedCard = (e) => {
@@ -1664,12 +1788,12 @@ Mensagem do casal:
     const carTcoData = useMemo(() => {
         const vehicleFinancings = (financings || []).filter(f => f.type === 'veiculo' && (Number(f.totalInstallments) || 0) > (Number(f.paidInstallments) || 0));
         const totalVehicleInstallment = vehicleFinancings.reduce((acc, f) => acc + (Number(f.installmentAmount) || 0), 0);
-        
+
         const insurance = Number(carExtraCosts.insurance) || 0;
         const gas = Number(carExtraCosts.gasMonthly) || 0;
         const maintenance = Number(carExtraCosts.maintenance) || 0;
         const tolls = Number(carExtraCosts.tolls) || 0;
-        
+
         const monthlyTotal = totalVehicleInstallment + insurance + gas + maintenance + tolls;
         const annualTotal = monthlyTotal * 12;
 
@@ -2076,7 +2200,7 @@ Analise detalhadamente o documento anexado (PDF ou imagem) ou texto deste contra
             return item;
         }));
         if (navigator.vibrate) {
-            try { navigator.vibrate(15); } catch(e) {}
+            try { navigator.vibrate(15); } catch (e) { }
         }
     };
 
@@ -4565,11 +4689,10 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                             {coupleAchievements.badges.map(badge => (
                                                 <div
                                                     key={badge.id}
-                                                    className={`rounded-3xl p-5 border transition-all duration-300 relative overflow-hidden flex flex-col justify-between ${
-                                                        badge.unlocked
+                                                    className={`rounded-3xl p-5 border transition-all duration-300 relative overflow-hidden flex flex-col justify-between ${badge.unlocked
                                                             ? 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md'
                                                             : 'bg-slate-50 dark:bg-slate-950/60 border-slate-200/60 dark:border-slate-800/40 opacity-75'
-                                                    }`}
+                                                        }`}
                                                 >
                                                     <div>
                                                         <div className="flex items-center justify-between mb-3">
@@ -4618,9 +4741,8 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                 </p>
                                             </div>
                                             <div className="flex items-center gap-2">
-                                                <span className={`px-3 py-1.5 rounded-2xl text-xs font-black flex items-center gap-1.5 ${
-                                                    comparativeData.diffDespesas <= 0 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                                                }`}>
+                                                <span className={`px-3 py-1.5 rounded-2xl text-xs font-black flex items-center gap-1.5 ${comparativeData.diffDespesas <= 0 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                                    }`}>
                                                     {comparativeData.diffDespesas <= 0 ? <ArrowDown size={14} /> : <ArrowUp size={14} />}
                                                     {comparativeData.diffDespesas <= 0
                                                         ? `Economia de ${formatCurrency(Math.abs(comparativeData.diffDespesas))} nas despesas`
@@ -4742,9 +4864,8 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                                 <div className="flex items-center gap-3 text-xs">
                                                                     <span className="text-slate-400">Anterior: <strong>{formatCurrency(cat.prevAmount)}</strong></span>
                                                                     <span className="text-slate-800 dark:text-white font-black">Atual: <strong>{formatCurrency(cat.currentAmount)}</strong></span>
-                                                                    <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${
-                                                                        cat.diff === 0 ? 'bg-slate-200 dark:bg-slate-800 text-slate-500' : isIncreased ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300'
-                                                                    }`}>
+                                                                    <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${cat.diff === 0 ? 'bg-slate-200 dark:bg-slate-800 text-slate-500' : isIncreased ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300'
+                                                                        }`}>
                                                                         {cat.diff === 0 ? 'Sem alteração' : isIncreased ? `+${formatCurrency(cat.diff)} (+${cat.pct.toFixed(0)}%)` : `${formatCurrency(cat.diff)} (${cat.pct.toFixed(0)}%)`}
                                                                     </span>
                                                                 </div>
@@ -5023,18 +5144,16 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                 return (
                                                     <div
                                                         key={ch.id}
-                                                        className={`rounded-3xl p-6 border transition-all flex flex-col justify-between ${
-                                                            isCompleted
+                                                        className={`rounded-3xl p-6 border transition-all flex flex-col justify-between ${isCompleted
                                                                 ? 'bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/20 border-emerald-300 dark:border-emerald-800/80 shadow-md'
                                                                 : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 shadow-sm'
-                                                        }`}
+                                                            }`}
                                                     >
                                                         <div>
                                                             <div className="flex justify-between items-start mb-3">
                                                                 <span className="text-3xl">{ch.rewardIcon || '🎯'}</span>
-                                                                <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider ${
-                                                                    isCompleted ? 'bg-emerald-500 text-white' : ch.status === 'em_progresso' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
-                                                                }`}>
+                                                                <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider ${isCompleted ? 'bg-emerald-500 text-white' : ch.status === 'em_progresso' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+                                                                    }`}>
                                                                     {isCompleted ? 'Concluído 🎉' : ch.status === 'em_progresso' ? 'Em Progresso 🏃' : 'Não Iniciado'}
                                                                 </span>
                                                             </div>
@@ -5186,11 +5305,10 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                         return (
                                                             <div
                                                                 key={fin.id}
-                                                                className={`p-6 rounded-3xl border transition-all flex flex-col justify-between ${
-                                                                    isFullyPaid
+                                                                className={`p-6 rounded-3xl border transition-all flex flex-col justify-between ${isFullyPaid
                                                                         ? 'bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/20 border-emerald-300 dark:border-emerald-800/80 shadow-md'
                                                                         : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-md'
-                                                                }`}
+                                                                    }`}
                                                             >
                                                                 <div>
                                                                     {/* Cabeçalho do Card */}
@@ -5257,9 +5375,8 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                                         </div>
                                                                         <div className="w-full bg-slate-200 dark:bg-slate-800 h-3 rounded-full overflow-hidden">
                                                                             <div
-                                                                                className={`h-full rounded-full transition-all duration-700 ${
-                                                                                    isFullyPaid ? 'bg-emerald-500' : 'bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600'
-                                                                                }`}
+                                                                                className={`h-full rounded-full transition-all duration-700 ${isFullyPaid ? 'bg-emerald-500' : 'bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600'
+                                                                                    }`}
                                                                                 style={{ width: `${pct}%` }}
                                                                             ></div>
                                                                         </div>
@@ -6860,13 +6977,12 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                         type="button"
                                         onClick={isListeningVoice ? handleStopVoiceRecording : handleStartVoiceRecording}
                                         disabled={isProcessingVoice}
-                                        className={`w-16 h-16 rounded-full flex items-center justify-center text-white text-2xl shadow-xl transition-all relative z-10 ${
-                                            isProcessingVoice
+                                        className={`w-16 h-16 rounded-full flex items-center justify-center text-white text-2xl shadow-xl transition-all relative z-10 ${isProcessingVoice
                                                 ? 'bg-blue-600'
                                                 : isListeningVoice
-                                                ? 'bg-rose-500 hover:bg-rose-600 scale-110 shadow-rose-500/40 animate-pulse'
-                                                : 'bg-gradient-to-tr from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-amber-500/30 active:scale-95'
-                                        }`}
+                                                    ? 'bg-rose-500 hover:bg-rose-600 scale-110 shadow-rose-500/40 animate-pulse'
+                                                    : 'bg-gradient-to-tr from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-amber-500/30 active:scale-95'
+                                            }`}
                                     >
                                         {isProcessingVoice ? (
                                             <Loader2 size={26} className="animate-spin" />
@@ -6892,8 +7008,8 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                     {isProcessingVoice
                                         ? "FinBot IA analisando seu lançamento..."
                                         : isListeningVoice
-                                        ? "Ouvindo sua voz! Toque no quadrado para enviar"
-                                        : "Fale ou Dite sua despesa/receita"}
+                                            ? "Ouvindo sua voz! Toque no quadrado para enviar"
+                                            : "Fale ou Dite sua despesa/receita"}
                                 </h3>
                                 <p className="text-xs text-slate-400">
                                     Fale o valor, local, forma de pagamento e quem pagou.
@@ -7050,11 +7166,10 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                     </div>
                                                 )}
                                                 <div
-                                                    className={`p-3.5 rounded-2xl text-xs leading-relaxed ${
-                                                        isUser
+                                                    className={`p-3.5 rounded-2xl text-xs leading-relaxed ${isUser
                                                             ? 'bg-blue-600 text-white rounded-br-sm shadow-md'
                                                             : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-bl-sm border border-slate-200 dark:border-slate-800 shadow-sm whitespace-pre-line'
-                                                    }`}
+                                                        }`}
                                                 >
                                                     {msg.text}
                                                 </div>
@@ -7811,14 +7926,45 @@ Responda ESTRITAMENTE um objeto JSON no formato:
 
                             {/* ABA 2: VINCULAR NOVO CARTÃO */}
                             {plaidActiveTab === 'add' && (
-                                <form onSubmit={handleAddConnectedCard} className="space-y-4">
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Banco / Emissor nos EUA</label>
-                                        <select
-                                            value={newCardForm.institution}
-                                            onChange={(e) => setNewCardForm({ ...newCardForm, institution: e.target.value })}
-                                            className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500"
-                                        >
+                                <div className="space-y-4">
+                                    {/* Opção 1: Conectar Direto com o Banco Oficial */}
+                                    <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/40 dark:to-indigo-950/40 rounded-3xl border border-blue-200 dark:border-blue-800/80 space-y-3">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center text-sm shadow-sm font-black">
+                                                ⚡
+                                            </div>
+                                            <div>
+                                                <h4 className="font-black text-slate-900 dark:text-white text-xs">Conexão Oficial com o Banco (Plaid Link)</h4>
+                                                <p className="text-[11px] text-slate-500 dark:text-slate-400">Faça login com Face ID no Chase, Amex, BofA, Wells Fargo, etc.</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleOpenOfficialPlaidLink(newCardForm.owner)}
+                                                disabled={isSyncingPlaid}
+                                                className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-black text-xs rounded-2xl shadow-md transition flex items-center justify-center gap-2 active:scale-95"
+                                            >
+                                                {isSyncingPlaid ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />}
+                                                Abrir Login Oficial do Banco (Plaid)
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-3 my-2">
+                                        <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1"></div>
+                                        <span className="text-[10px] font-bold text-slate-400 uppercase">ou cadastre com 4 dígitos abaixo</span>
+                                        <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1"></div>
+                                    </div>
+
+                                    <form onSubmit={handleAddConnectedCard} className="space-y-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Banco / Emissor nos EUA</label>
+                                            <select
+                                                value={newCardForm.institution}
+                                                onChange={(e) => setNewCardForm({ ...newCardForm, institution: e.target.value })}
+                                                className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                            >
                                             <option value="Chase Sapphire / Freedom">Chase (Sapphire / Freedom / Slate)</option>
                                             <option value="American Express Gold / Platinum">American Express (Amex Gold / Platinum / Blue)</option>
                                             <option value="Bank of America Customized">Bank of America (Customized / Travel)</option>
@@ -7876,6 +8022,7 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                         💳 Vincular Cartão ao Aplicativo
                                     </button>
                                 </form>
+                                </div>
                             )}
 
                             {/* ABA 3: AUTOMAÇÃO APPLE PAY (IPHONE) */}
@@ -8016,13 +8163,12 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                     return (
                                         <div
                                             key={idx}
-                                            className={`w-4 h-4 rounded-full transition-all duration-200 ${
-                                                pinError
+                                            className={`w-4 h-4 rounded-full transition-all duration-200 ${pinError
                                                     ? 'bg-rose-500 scale-125 ring-4 ring-rose-500/30'
                                                     : isFilled
-                                                    ? 'bg-blue-500 scale-125 ring-4 ring-blue-500/30 shadow-lg shadow-blue-500/50'
-                                                    : 'bg-slate-800 border border-slate-700'
-                                            }`}
+                                                        ? 'bg-blue-500 scale-125 ring-4 ring-blue-500/30 shadow-lg shadow-blue-500/50'
+                                                        : 'bg-slate-800 border border-slate-700'
+                                                }`}
                                         />
                                     );
                                 })}
