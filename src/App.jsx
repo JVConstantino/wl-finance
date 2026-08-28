@@ -480,7 +480,16 @@ export default function App() {
         autoDebit: true
     });
 
-    // 21. Estados Pull-to-Refresh
+    // 21. Custos Complementares do Carro nos EUA (TCO)
+    const [carExtraCosts, setCarExtraCosts] = useState(() => safeGet('fp_car_extra_costs', {
+        insurance: 160,
+        gasMonthly: 140,
+        maintenance: 45,
+        tolls: 25
+    }));
+    const [isCarCostsModalOpen, setIsCarCostsModalOpen] = useState(false);
+
+    // 22. Estados Pull-to-Refresh
     const [pullY, setPullY] = useState(0);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const touchStartRef = useRef(0);
@@ -1256,6 +1265,87 @@ export default function App() {
         };
     }, [currentDate, transactions, monthlyTransactions, totals, monthlySummary, allCategoryColors]);
 
+    // 22. Raio-X de Supermercados nos EUA (Costco, Walmart, Target, Publix, Trader Joe's)
+    const groceryAnalysisData = useMemo(() => {
+        const isGrocery = (t) => {
+            const cat = (t.category || '').toLowerCase();
+            const desc = (t.description || '').toLowerCase();
+            return cat.includes('aliment') || cat.includes('mercado') || cat.includes('supermercado') || cat.includes('grocery') ||
+                   desc.includes('costco') || desc.includes('walmart') || desc.includes('target') || desc.includes('publix') || desc.includes('trader') || desc.includes('aldi') || desc.includes('kroger') || desc.includes('sam');
+        };
+        const currentMonthGrocery = (monthlyTransactions || []).filter(t => t.type === 'saida' && isGrocery(t));
+        const totalCurrent = currentMonthGrocery.reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
+        const countCurrent = currentMonthGrocery.length;
+        const avgTicket = countCurrent > 0 ? totalCurrent / countCurrent : 0;
+
+        // Mês anterior
+        const prevMonthGrocery = (transactions || []).filter(t => {
+            if (t.type !== 'saida' || !isGrocery(t)) return false;
+            const [y, m] = (t.date || '').split('-');
+            const currentYear = currentDate.getFullYear();
+            const currentMonth = currentDate.getMonth(); // 0-11
+            const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+            const prevMonth = currentMonth === 0 ? 12 : currentMonth; // 1-12
+            return Number(y) === prevYear && Number(m) === prevMonth;
+        });
+        const totalPrev = prevMonthGrocery.reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
+        const diffPct = totalPrev > 0 ? ((totalCurrent - totalPrev) / totalPrev) * 100 : 0;
+
+        return {
+            totalCurrent,
+            countCurrent,
+            avgTicket,
+            totalPrev,
+            diffPct,
+            transactions: currentMonthGrocery
+        };
+    }, [monthlyTransactions, transactions, currentDate]);
+
+    // 23. Poupança de Centavos (Efeito Round-Up / Acorns Automático)
+    const roundUpData = useMemo(() => {
+        let totalCents = 0;
+        let eligibleCount = 0;
+        (monthlyTransactions || []).forEach(t => {
+            if (t.type === 'saida' && t.amount > 0) {
+                const decimal = t.amount % 1;
+                if (decimal > 0.001) {
+                    const diff = 1 - decimal;
+                    totalCents += diff;
+                    eligibleCount++;
+                }
+            }
+        });
+        const roundedTotal = Math.round(totalCents * 100) / 100;
+        const projectedAnnual = roundedTotal * 12;
+        const projected5Years = projectedAnnual * 5;
+        return {
+            totalMonthly: roundedTotal,
+            eligibleCount,
+            projectedAnnual,
+            projected5Years
+        };
+    }, [monthlyTransactions]);
+
+    const handleDepositRoundUp = (goalId) => {
+        if (!roundUpData.totalMonthly || roundUpData.totalMonthly <= 0) {
+            showToast("Nenhum centavo de troco acumulado este mês ainda.");
+            return;
+        }
+        const targetGoal = savingsGoals.find(g => g.id === goalId) || savingsGoals[0];
+        if (!targetGoal) {
+            showToast("Crie um cofrinho primeiro para depositar o troco.");
+            return;
+        }
+        const amountToAdd = roundUpData.totalMonthly;
+        setSavingsGoals(prev => prev.map(g => {
+            if (g.id === targetGoal.id) {
+                return { ...g, currentAmount: (Number(g.currentAmount) || 0) + amountToAdd };
+            }
+            return g;
+        }));
+        showToast(`🪙 Troco de ${formatCurrency(amountToAdd)} guardado no cofrinho "${targetGoal.title}"! 🎉`);
+    };
+
     // Handlers de Desafios do Casal
     const handleAdvanceChallenge = (challengeId) => {
         setCoupleChallenges(prev => prev.map(ch => {
@@ -1440,10 +1530,40 @@ Mensagem do casal:
         localStorage.setItem('fp_currency', JSON.stringify(selectedCurrency));
     }, [selectedCurrency]);
 
-    // Sincronização LocalStorage para Financiamentos
+    // Sincronização LocalStorage para Financiamentos e Custos Veiculares
     useEffect(() => {
         localStorage.setItem('fp_financings', JSON.stringify(financings));
     }, [financings]);
+
+    useEffect(() => {
+        localStorage.setItem('fp_car_extra_costs', JSON.stringify(carExtraCosts));
+    }, [carExtraCosts]);
+
+    // 24. Custo Total do Veículo nos EUA (Total Cost of Ownership - TCO)
+    const carTcoData = useMemo(() => {
+        const vehicleFinancings = (financings || []).filter(f => f.type === 'veiculo' && (Number(f.totalInstallments) || 0) > (Number(f.paidInstallments) || 0));
+        const totalVehicleInstallment = vehicleFinancings.reduce((acc, f) => acc + (Number(f.installmentAmount) || 0), 0);
+        
+        const insurance = Number(carExtraCosts.insurance) || 0;
+        const gas = Number(carExtraCosts.gasMonthly) || 0;
+        const maintenance = Number(carExtraCosts.maintenance) || 0;
+        const tolls = Number(carExtraCosts.tolls) || 0;
+        
+        const monthlyTotal = totalVehicleInstallment + insurance + gas + maintenance + tolls;
+        const annualTotal = monthlyTotal * 12;
+
+        return {
+            hasVehicle: vehicleFinancings.length > 0,
+            vehicleCount: vehicleFinancings.length,
+            installment: totalVehicleInstallment,
+            insurance,
+            gas,
+            maintenance,
+            tolls,
+            monthlyTotal,
+            annualTotal
+        };
+    }, [financings, carExtraCosts]);
 
     // Resumo Geral de Financiamentos
     const financingsSummary = useMemo(() => {
@@ -3764,6 +3884,34 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                 </button>
                                             </div>
 
+                                            {/* BANNER ROUND-UP (POUPANÇA AUTOMÁTICA DE TROCO / ACORNS) */}
+                                            <div className="mb-4 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/10 dark:from-amber-950/40 dark:via-orange-950/40 dark:to-amber-950/40 border border-amber-300 dark:border-amber-700/60 rounded-2xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center text-xl shrink-0 shadow-md shadow-amber-500/30">
+                                                        🪙
+                                                    </div>
+                                                    <div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-xs font-black text-slate-800 dark:text-white">Troco Automático (Round-Up)</span>
+                                                            <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-500 text-white">Efeito Acorns</span>
+                                                        </div>
+                                                        <p className="text-[11px] text-slate-600 dark:text-slate-300 font-medium mt-0.5">
+                                                            <strong className="text-amber-600 dark:text-amber-400">{formatCurrency(roundUpData.totalMonthly)}</strong> em centavos de {roundUpData.eligibleCount} compras • Projeção: <span className="font-bold">{formatCurrency(roundUpData.projectedAnnual)}/ano</span>
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                {savingsGoals.length > 0 && (
+                                                    <button
+                                                        type="button"
+                                                        disabled={roundUpData.totalMonthly <= 0}
+                                                        onClick={() => handleDepositRoundUp(savingsGoals[0]?.id)}
+                                                        className="w-full sm:w-auto px-3.5 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 disabled:opacity-50 text-white text-xs font-black rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 shrink-0 active:scale-95"
+                                                    >
+                                                        📥 Guardar {formatCurrency(roundUpData.totalMonthly)}
+                                                    </button>
+                                                )}
+                                            </div>
+
                                             <div className="space-y-3">
                                                 {savingsGoals.length === 0 ? (
                                                     <div className="text-center py-6 text-slate-400 text-xs font-medium">
@@ -4492,6 +4640,75 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                 })}
                                             </div>
                                         </div>
+
+                                        {/* RAIO-X DE SUPERMERCADOS & ATACADOS NOS EUA */}
+                                        <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 border border-slate-100 dark:border-slate-800 shadow-sm space-y-4">
+                                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                                                <div>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-9 h-9 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-lg">
+                                                            🛒
+                                                        </div>
+                                                        <div>
+                                                            <h3 className="text-base font-black text-slate-800 dark:text-white">Raio-X de Supermercados & Atacados</h3>
+                                                            <p className="text-xs text-slate-400">Acompanhe compras no Costco, Walmart, Trader Joe's, Target e Publix</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">Costco</span>
+                                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">Walmart</span>
+                                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">Trader Joe's</span>
+                                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">Publix</span>
+                                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">Target</span>
+                                                </div>
+                                            </div>
+
+                                            {/* 3 STATS CARDS */}
+                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                                                <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800">
+                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Gasto Total no Mês</span>
+                                                    <p className="text-xl font-black text-slate-900 dark:text-white mt-1">
+                                                        {formatCurrency(groceryAnalysisData.totalCurrent)}
+                                                    </p>
+                                                    <span className="text-[10px] text-slate-400 block mt-0.5">
+                                                        Mês anterior: {formatCurrency(groceryAnalysisData.totalPrev)}
+                                                    </span>
+                                                </div>
+
+                                                <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800">
+                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Variação vs Mês Anterior</span>
+                                                    <p className={`text-xl font-black mt-1 ${groceryAnalysisData.diffPct <= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                        {groceryAnalysisData.totalPrev > 0 ? (
+                                                            `${groceryAnalysisData.diffPct > 0 ? '+' : ''}${groceryAnalysisData.diffPct.toFixed(1)}%`
+                                                        ) : (
+                                                            'Primeiro mês'
+                                                        )}
+                                                    </p>
+                                                    <span className="text-[10px] text-slate-400 block mt-0.5">
+                                                        {groceryAnalysisData.diffPct <= 0 ? '🎉 Menos gastos com mercado' : '⚠️ Gasto maior que o anterior'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800">
+                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Ticket Médio por Ida</span>
+                                                    <p className="text-xl font-black text-blue-600 dark:text-blue-400 mt-1">
+                                                        {formatCurrency(groceryAnalysisData.avgTicket)}
+                                                    </p>
+                                                    <span className="text-[10px] text-slate-400 block mt-0.5">
+                                                        {groceryAnalysisData.countCurrent} {groceryAnalysisData.countCurrent === 1 ? 'compra registrada' : 'compras registradas'}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            {/* Dica FinBot IA */}
+                                            <div className="p-3.5 bg-emerald-500/10 rounded-2xl border border-emerald-500/20 text-xs text-emerald-900 dark:text-emerald-200 flex items-start gap-2.5">
+                                                <Sparkles size={16} className="text-emerald-500 shrink-0 mt-0.5" />
+                                                <p className="leading-relaxed">
+                                                    <strong>Dica FinBot para Casais nos EUA:</strong> Comprar itens de despensa e produtos não perecíveis no atacado (Costco/Sam's Club) e deixar frutas e perecíveis semanais para o Trader Joe's ou Aldi reduz em média 15% a 20% do orçamento de mercado.
+                                                </p>
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
 
@@ -4939,6 +5156,67 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                     })}
                                                 </div>
                                             )}
+                                        </div>
+
+                                        {/* CUSTO REAL DO VEÍCULO NOS EUA (TCO) */}
+                                        <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white rounded-3xl p-6 border border-white/10 shadow-xl space-y-5">
+                                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-12 h-12 rounded-2xl bg-blue-600/30 text-blue-400 border border-blue-500/30 flex items-center justify-center text-2xl shadow-inner">
+                                                        ⛽
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-[10px] font-black uppercase tracking-wider text-blue-300">Total Cost of Ownership (EUA)</span>
+                                                        <h3 className="text-xl font-black">Custo Real do Veículo por Mês</h3>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsCarCostsModalOpen(true)}
+                                                    className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-2xl text-xs font-black transition flex items-center gap-2 border border-white/15 active:scale-95"
+                                                >
+                                                    ⚙️ Ajustar Custos Adicionais
+                                                </button>
+                                            </div>
+
+                                            {/* 4 CARDS DE CUSTO */}
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                                <div className="bg-white/5 backdrop-blur-md p-3.5 rounded-2xl border border-white/10">
+                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Parcela Financiamento</span>
+                                                    <p className="text-base sm:text-lg font-black text-white mt-1">{formatCurrency(carTcoData.installment)}</p>
+                                                    <span className="text-[10px] text-slate-400">mensal</span>
+                                                </div>
+                                                <div className="bg-white/5 backdrop-blur-md p-3.5 rounded-2xl border border-white/10">
+                                                    <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider block">Seguro Auto (Insurance)</span>
+                                                    <p className="text-base sm:text-lg font-black text-indigo-300 mt-1">{formatCurrency(carTcoData.insurance)}</p>
+                                                    <span className="text-[10px] text-slate-400">mensal</span>
+                                                </div>
+                                                <div className="bg-white/5 backdrop-blur-md p-3.5 rounded-2xl border border-white/10">
+                                                    <span className="text-[10px] font-bold text-amber-300 uppercase tracking-wider block">Gasolina / Combustível</span>
+                                                    <p className="text-base sm:text-lg font-black text-amber-300 mt-1">{formatCurrency(carTcoData.gas)}</p>
+                                                    <span className="text-[10px] text-slate-400">mensal estimado</span>
+                                                </div>
+                                                <div className="bg-white/5 backdrop-blur-md p-3.5 rounded-2xl border border-white/10">
+                                                    <span className="text-[10px] font-bold text-rose-300 uppercase tracking-wider block">Manutenção & Pedágios</span>
+                                                    <p className="text-base sm:text-lg font-black text-rose-300 mt-1">{formatCurrency(carTcoData.maintenance + carTcoData.tolls)}</p>
+                                                    <span className="text-[10px] text-slate-400">óleo, SunPass, etc.</span>
+                                                </div>
+                                            </div>
+
+                                            {/* RESUMO TOTAL MENSAL E ANUAL */}
+                                            <div className="p-4 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                                                <div>
+                                                    <span className="text-xs text-blue-200 font-bold block">Impacto Real do Carro no Orçamento do Casal:</span>
+                                                    <div className="flex items-baseline gap-2 mt-0.5">
+                                                        <span className="text-2xl sm:text-3xl font-black text-white">{formatCurrency(carTcoData.monthlyTotal)}</span>
+                                                        <span className="text-xs text-blue-200">/ mês</span>
+                                                        <span className="text-xs text-slate-400 ml-2">({formatCurrency(carTcoData.annualTotal)} / ano)</span>
+                                                    </div>
+                                                </div>
+                                                <div className="text-[11px] text-blue-200/80 max-w-xs leading-tight">
+                                                    💡 <em>Dica FinBot:</em> O financiamento representa apenas {(carTcoData.monthlyTotal > 0 ? (carTcoData.installment / carTcoData.monthlyTotal) * 100 : 0).toFixed(0)}% do custo real do carro nos EUA.
+                                                </div>
+                                            </div>
                                         </div>
 
                                         {/* CARD EDUCATIVO: COMO ECONOMIZAR COM AMORTIZAÇÃO */}
@@ -7166,6 +7444,95 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                     </div>
                                 );
                             })()}
+                        </div>
+                    </div>
+                )}
+
+                {/* ========================================================================= */}
+                {/* MODAL AJUSTAR CUSTOS DO VEÍCULO NOS EUA (TCO) */}
+                {/* ========================================================================= */}
+                {isCarCostsModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200">
+                        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsCarCostsModalOpen(false)}></div>
+                        <div className="relative bg-white dark:bg-slate-900 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+                            <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xl">
+                                        ⛽
+                                    </div>
+                                    <div>
+                                        <h2 className="text-lg font-black text-slate-800 dark:text-white">Custos do Carro nos EUA</h2>
+                                        <p className="text-xs text-slate-400">Seguro, gasolina, manutenção e pedágios</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setIsCarCostsModalOpen(false)} className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 rounded-2xl">
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            <form onSubmit={(e) => {
+                                e.preventDefault();
+                                setIsCarCostsModalOpen(false);
+                                showToast("Custos do veículo atualizados com sucesso!");
+                            }} className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Seguro Auto / Insurance ($/mês)</label>
+                                    <input
+                                        type="number"
+                                        step="1"
+                                        required
+                                        value={carExtraCosts.insurance}
+                                        onChange={(e) => setCarExtraCosts({ ...carExtraCosts, insurance: Number(e.target.value) || 0 })}
+                                        placeholder="160"
+                                        className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Gasolina / Combustível Estimado ($/mês)</label>
+                                    <input
+                                        type="number"
+                                        step="1"
+                                        required
+                                        value={carExtraCosts.gasMonthly}
+                                        onChange={(e) => setCarExtraCosts({ ...carExtraCosts, gasMonthly: Number(e.target.value) || 0 })}
+                                        placeholder="140"
+                                        className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Manutenção ($/mês)</label>
+                                        <input
+                                            type="number"
+                                            step="1"
+                                            value={carExtraCosts.maintenance}
+                                            onChange={(e) => setCarExtraCosts({ ...carExtraCosts, maintenance: Number(e.target.value) || 0 })}
+                                            placeholder="45"
+                                            className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Pedágios / SunPass ($/mês)</label>
+                                        <input
+                                            type="number"
+                                            step="1"
+                                            value={carExtraCosts.tolls}
+                                            onChange={(e) => setCarExtraCosts({ ...carExtraCosts, tolls: Number(e.target.value) || 0 })}
+                                            placeholder="25"
+                                            className="w-full text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+                                </div>
+
+                                <button
+                                    type="submit"
+                                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl text-sm shadow-lg shadow-blue-600/30 transition active:scale-98 mt-2"
+                                >
+                                    Salvar Custos do Veículo
+                                </button>
+                            </form>
                         </div>
                     </div>
                 )}
