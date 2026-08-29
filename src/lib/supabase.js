@@ -1,6 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Obter URL e Key das variáveis de ambiente ou do LocalStorage (permite configurar direto pelo app)
+const DEFAULT_SUPABASE_URL = 'https://bizffflhdbtwixquzdyc.supabase.co';
+const DEFAULT_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJpemZmZmxoZGJ0d2l4cXV6ZHljIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc3ODg3NzIsImV4cCI6MjEwMzM2NDc3Mn0.JbOzv2fW_lhiEZ34qNNTesdVvQB4eZFO62ffNm0h9X0';
+
+// Obter URL e Key das variáveis de ambiente, LocalStorage ou fallback de fábrica
 export const getSupabaseConfig = () => {
     try {
         let envUrl = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_URL) || '';
@@ -15,8 +18,8 @@ export const getSupabaseConfig = () => {
             } catch(e) {}
         }
 
-        let url = (envUrl.trim() !== '') ? envUrl.trim() : localUrl.trim();
-        let key = (envKey.trim() !== '') ? envKey.trim() : localKey.trim();
+        let url = (envUrl.trim() !== '') ? envUrl.trim() : (localUrl.trim() !== '' ? localUrl.trim() : DEFAULT_SUPABASE_URL);
+        let key = (envKey.trim() !== '') ? envKey.trim() : (localKey.trim() !== '' ? localKey.trim() : DEFAULT_SUPABASE_KEY);
 
         // Sanitização e limpeza de aspas e barras
         url = url.replace(/['"]+/g, '').replace(/\/+$/, '');
@@ -33,7 +36,7 @@ export const getSupabaseConfig = () => {
         };
     } catch (err) {
         console.warn('Erro ao ler configuração Supabase:', err);
-        return { url: '', key: '', isConfigured: false };
+        return { url: DEFAULT_SUPABASE_URL, key: DEFAULT_SUPABASE_KEY, isConfigured: true };
     }
 };
 

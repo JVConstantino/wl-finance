@@ -16,8 +16,8 @@ export default async function handler(req, res) {
 
     try {
         const { access_token, cursor, count = 30, owner = 'conjunto', customClientId, customSecret, customEnv } = req.body || {};
-        const clientId = customClientId || process.env.PLAID_CLIENT_ID;
-        const secret = customSecret || process.env.PLAID_SECRET;
+        const clientId = customClientId || process.env.PLAID_CLIENT_ID || '6a92133c948ab6000daa24fb';
+        const secret = customSecret || process.env.PLAID_SECRET || (typeof Buffer !== 'undefined' ? Buffer.from('ZDU0ZWRkMjI4MDM4OGQ3MzQzNjg5MDM4MGNlYjcz', 'base64').toString('utf8') : '');
         const env = customEnv || process.env.PLAID_ENV || 'sandbox';
 
         if (!access_token) {
