@@ -8781,14 +8781,22 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                     <div className="grid grid-cols-2 gap-2">
                                         <button
                                             type="button"
-                                            onClick={() => setFixedBillForm(prev => ({ ...prev, type: 'saida' }))}
+                                            onClick={() => setFixedBillForm(prev => ({
+                                                ...prev,
+                                                type: 'saida',
+                                                category: (allCategories.saida && allCategories.saida[0]) || 'Casa'
+                                            }))}
                                             className={`py-2.5 rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2 ${fixedBillForm.type === 'saida' ? 'bg-rose-500 text-white shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
                                         >
                                             <ArrowDown size={14} /> Despesa Fixa
                                         </button>
                                         <button
                                             type="button"
-                                            onClick={() => setFixedBillForm(prev => ({ ...prev, type: 'entrada' }))}
+                                            onClick={() => setFixedBillForm(prev => ({
+                                                ...prev,
+                                                type: 'entrada',
+                                                category: (allCategories.entrada && allCategories.entrada[0]) || 'Salário'
+                                            }))}
                                             className={`py-2.5 rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2 ${fixedBillForm.type === 'entrada' ? 'bg-emerald-500 text-white shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
                                         >
                                             <ArrowUp size={14} /> Receita Fixa
@@ -8846,8 +8854,8 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                             onChange={e => setFixedBillForm(prev => ({ ...prev, category: e.target.value }))}
                                             className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-sm font-bold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                                         >
-                                            {categories.map(c => (
-                                                <option key={c.name} value={c.name}>{c.name}</option>
+                                            {(allCategories[fixedBillForm.type] || allCategories.saida || []).map(catName => (
+                                                <option key={catName} value={catName}>{catName}</option>
                                             ))}
                                         </select>
                                     </div>
