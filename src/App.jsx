@@ -4164,48 +4164,102 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                 </button>
                                             </div>
 
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3.5">
                                                 {accounts.map(acc => {
                                                     const currentBalance = accountBalances[acc.id] || 0;
                                                     const isNegativeCredit = acc.type === 'credito' && currentBalance < 0;
                                                     const isSelected = selectedAccountId === acc.id;
 
+                                                    // Paletas e detalhes refinados estilo Fintech Premium
+                                                    let cardTheme = {
+                                                        gradient: 'from-slate-950 via-indigo-950/90 to-blue-950',
+                                                        border: 'border-indigo-500/30 shadow-indigo-950/30',
+                                                        badge: 'bg-blue-500/20 text-blue-300 border border-blue-500/30',
+                                                        chipType: 'silver',
+                                                        subText: 'AG 0001 • CC 5821',
+                                                        typeLabel: 'Sapphire Account'
+                                                    };
+
+                                                    if (acc.type === 'credito') {
+                                                        cardTheme = {
+                                                            gradient: 'from-zinc-950 via-slate-900 to-neutral-900',
+                                                            border: 'border-zinc-700/60 shadow-zinc-950/50',
+                                                            badge: 'bg-rose-500/20 text-rose-300 border border-rose-500/30',
+                                                            chipType: 'gold',
+                                                            subText: '•••• 8920',
+                                                            typeLabel: 'Black Titanium'
+                                                        };
+                                                    } else if (acc.type === 'dinheiro') {
+                                                        cardTheme = {
+                                                            gradient: 'from-slate-950 via-emerald-950/90 to-teal-950',
+                                                            border: 'border-emerald-500/30 shadow-emerald-950/30',
+                                                            badge: 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30',
+                                                            chipType: 'emerald',
+                                                            subText: '💵 Caixa Físico',
+                                                            typeLabel: 'Emerald Cash'
+                                                        };
+                                                    }
+
                                                     return (
                                                         <div
                                                             key={acc.id}
                                                             onClick={() => setSelectedAccountId(prev => prev === acc.id ? 'todos' : acc.id)}
-                                                            className={`rounded-3xl p-5 shadow-md bg-gradient-to-br ${acc.color} text-white relative overflow-hidden flex flex-col justify-between h-40 border transition-all cursor-pointer select-none active:scale-[0.98] ${
+                                                            className={`rounded-3xl p-5 shadow-xl bg-gradient-to-br ${cardTheme.gradient} text-white relative overflow-hidden flex flex-col justify-between h-44 border transition-all cursor-pointer select-none active:scale-[0.98] ${
                                                                 isSelected 
-                                                                    ? 'ring-4 ring-blue-500 shadow-2xl scale-[1.02] border-white/40' 
-                                                                    : 'border-white/10 hover:border-white/30 hover:shadow-xl'
+                                                                    ? 'ring-4 ring-blue-500 shadow-2xl scale-[1.02] border-white/50' 
+                                                                    : `${cardTheme.border} hover:border-white/40 hover:scale-[1.01]`
                                                             }`}
                                                         >
-                                                            <div className="absolute -right-4 -bottom-4 opacity-15 pointer-events-none">
-                                                                {acc.type === 'banco' ? <Landmark size={85} /> : acc.type === 'credito' ? <CreditCard size={85} /> : <Wallet size={85} />}
+                                                            {/* Reflexo de luz suave no fundo */}
+                                                            <div className="absolute top-0 right-0 w-36 h-36 bg-white/[0.03] rounded-full blur-2xl pointer-events-none"></div>
+                                                            <div className="absolute -right-3 -bottom-3 opacity-10 pointer-events-none">
+                                                                {acc.type === 'banco' ? <Landmark size={90} /> : acc.type === 'credito' ? <CreditCard size={90} /> : <Wallet size={90} />}
                                                             </div>
 
-                                                            <div className="flex justify-between items-start">
+                                                            {/* Topo do Cartão: Nome + Chip & Contactless */}
+                                                            <div className="flex justify-between items-start z-10">
                                                                 <div>
-                                                                    <p className="text-white/80 text-[11px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1.5">
-                                                                        {acc.type === 'banco' ? <Landmark size={13} /> : acc.type === 'credito' ? <CreditCard size={13} /> : <Wallet size={13} />}
-                                                                        {acc.name}
-                                                                    </p>
-                                                                    <h2 className="text-2xl font-black tracking-tight mt-1">
+                                                                    <div className="flex items-center gap-1.5 mb-1">
+                                                                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-300">
+                                                                            {acc.name}
+                                                                        </span>
+                                                                        <span className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded-md ${cardTheme.badge}`}>
+                                                                            {cardTheme.typeLabel}
+                                                                        </span>
+                                                                    </div>
+                                                                    <h2 className="text-2xl font-black tracking-tight text-white drop-shadow-sm">
                                                                         {formatCurrency(currentBalance)}
                                                                     </h2>
                                                                 </div>
 
-                                                                {isSelected && (
-                                                                    <span className="text-[10px] font-black bg-white text-slate-900 px-2 py-0.5 rounded-full shadow-sm flex items-center gap-1 animate-in fade-in">
-                                                                        ✓ Ativa
-                                                                    </span>
-                                                                )}
+                                                                {/* Chip metálico simulado + Contactless */}
+                                                                <div className="flex items-center gap-2">
+                                                                    {cardTheme.chipType === 'gold' ? (
+                                                                        <div className="w-8 h-6 rounded-md bg-gradient-to-tr from-amber-400 via-yellow-200 to-amber-500 shadow-inner border border-amber-300/60 flex items-center justify-center relative overflow-hidden">
+                                                                            <div className="w-full h-[1px] bg-amber-800/40"></div>
+                                                                            <div className="absolute w-[1px] h-full bg-amber-800/40"></div>
+                                                                        </div>
+                                                                    ) : cardTheme.chipType === 'silver' ? (
+                                                                        <div className="w-8 h-6 rounded-md bg-gradient-to-tr from-slate-300 via-slate-100 to-slate-400 shadow-inner border border-slate-200/60 flex items-center justify-center relative overflow-hidden">
+                                                                            <div className="w-full h-[1px] bg-slate-600/40"></div>
+                                                                            <div className="absolute w-[1px] h-full bg-slate-600/40"></div>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="w-8 h-6 rounded-md bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-300">
+                                                                            <Wallet size={13} />
+                                                                        </div>
+                                                                    )}
+                                                                    <Wifi size={14} className="text-white/40 rotate-90" />
+                                                                </div>
                                                             </div>
 
-                                                            <div className="flex items-center justify-between z-10">
-                                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-black/20 text-white/90">
-                                                                    {acc.type === 'credito' ? 'Fatura' : 'Saldo'}
-                                                                </span>
+                                                            {/* Base do Cartão: Máscara de número + Botão/Status */}
+                                                            <div className="flex items-center justify-between z-10 pt-2 border-t border-white/10">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-[11px] font-mono tracking-widest text-slate-300/80">
+                                                                        {cardTheme.subText}
+                                                                    </span>
+                                                                </div>
 
                                                                 {isNegativeCredit ? (
                                                                     <button
@@ -4214,13 +4268,13 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                                             setInvoiceAccountToPay(acc); 
                                                                             setIsPayInvoiceModalOpen(true); 
                                                                         }}
-                                                                        className="bg-white text-slate-900 hover:bg-slate-100 text-xs font-extrabold py-1 px-3 rounded-xl transition shadow flex items-center gap-1 active:scale-95"
+                                                                        className="bg-white hover:bg-slate-100 text-slate-900 text-xs font-black py-1.5 px-3 rounded-xl transition shadow flex items-center gap-1 active:scale-95"
                                                                     >
-                                                                        <CheckCircle2 size={13} className="text-rose-500" /> Pagar Fatura
+                                                                        <CheckCircle2 size={13} className="text-rose-600" /> Pagar Fatura
                                                                     </button>
                                                                 ) : (
-                                                                    <span className="text-[10px] text-white/70 font-medium">
-                                                                        {isSelected ? 'Toque p/ limpar filtro' : 'Toque p/ ver extrato →'}
+                                                                    <span className="text-[10px] text-slate-300 font-bold flex items-center gap-1">
+                                                                        {isSelected ? '✓ Filtrando' : 'Ver Extrato →'}
                                                                     </span>
                                                                 )}
                                                             </div>
