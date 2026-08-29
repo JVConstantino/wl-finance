@@ -32,27 +32,31 @@ export default async function handler(req, res) {
             ? 'https://production.plaid.com' 
             : (env === 'development' ? 'https://development.plaid.com' : 'https://sandbox.plaid.com');
 
+        const requestPayload = {
+            client_id: clientId,
+            secret: secret,
+            client_name: 'FinançasPro Casal',
+            country_codes: ['US'],
+            language: 'en',
+            user: {
+                client_user_id: String(userId || 'wl_user_' + Date.now())
+            },
+            products: ['transactions']
+        };
+
         const response = await fetch(`${plaidHost}/link/token/create`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                client_id: clientId,
-                secret: secret,
-                client_name: 'FinançasPro Casal',
-                country_codes: ['US'],
-                language: 'en',
-                user: {
-                    client_user_id: userId || 'wl_finance_user'
-                },
-                products: ['transactions', 'auth']
-            })
+            body: JSON.stringify(requestPayload)
         });
 
         const data = await response.json();
 
         if (!response.ok) {
+            console.error('Plaid API Error:', data);
             return res.status(response.status).json({
-                error: data.error_message || 'Erro ao comunicar com o Plaid',
+                error: data.error_message || data.display_message || 'Erro ao comunicar com o Plaid',
+                error_code: data.error_code,
                 details: data
             });
         }
