@@ -11,7 +11,7 @@ import {
     Download, ShieldCheck, Layers, ChevronDown, Database, LogIn, LogOut, RefreshCw,
     Lock, Unlock, Shield, Heart, Copy, ShoppingCart, PiggyBank, Bell, CheckSquare, Square, Flame,
     Mic, MicOff, Scale, Share2, Trophy, Award, Medal, Printer, FileDown, Star,
-    Zap, Compass, Rocket, Bot, Sliders, Play, RotateCcw
+    Zap, Compass, Rocket, Bot, Sliders, Play, Pause, RotateCcw
 } from 'lucide-react';
 import {
     getSupabase, getSupabaseConfig, saveSupabaseConfig, clearSupabaseConfig,
@@ -44,6 +44,97 @@ const defaultAccounts = [
     { id: 'acc_main', name: 'Conta Principal', type: 'banco', color: 'from-blue-600 to-indigo-800' },
     { id: 'acc_wallet', name: 'Carteira Física', type: 'dinheiro', color: 'from-emerald-500 to-teal-700' },
     { id: 'acc_credit', name: 'Cartão de Crédito', type: 'credito', color: 'from-rose-500 to-pink-700' }
+];
+
+const tourScenes = [
+    {
+        id: 'scene_overview',
+        tag: '01 • VISÃO GERAL',
+        title: 'Nosso Cantinho Financeiro',
+        subtitle: 'Todo o patrimônio do casal reunido com saldo em tempo real.',
+        badge: '🌟 Dashboard Geral',
+        color: 'from-blue-600 to-indigo-700',
+        narration: 'Bem-vinda ao nosso aplicativo financeiro! Aqui a gente acompanha todo o nosso dinheiro em um só lugar, com saldo em tempo real, receitas, despesas e investimentos.',
+        highlightText: 'Receitas, despesas, aportes e o saldo líquido real da família organizados em cartões executivos.',
+        demoType: 'kpis'
+    },
+    {
+        id: 'scene_accounts',
+        tag: '02 • CONTAS & CARTÕES',
+        title: 'Nossas Contas com 1 Toque',
+        subtitle: 'Conta Bancária, Cartão de Crédito e Dinheiro em Dólar com visual exclusivo.',
+        badge: '💳 Contas Inteligentes',
+        color: 'from-indigo-600 to-purple-700',
+        narration: 'Com apenas um toque em qualquer cartão, você vê o extrato filtrado na hora, as entradas, saídas e o valor da fatura daquela conta.',
+        highlightText: 'Ao tocar em qualquer conta, o extrato filtra na hora e abre o resumo exclusivo de saldo, entradas e faturas.',
+        demoType: 'accounts'
+    },
+    {
+        id: 'scene_transactions',
+        tag: '03 • LANÇAMENTOS AO VIVO',
+        title: 'Lançamentos & A Soma Mudando Ao Vivo',
+        subtitle: 'Cada compra registrada recalcula saldos e gráficos instantaneamente.',
+        badge: '📊 Soma Dinâmica',
+        color: 'from-emerald-600 to-teal-700',
+        narration: 'Registrou uma compra no mercado ou um restaurante? O app recalcula tudo na hora, atualizando nossos gráficos de gastos e saldo líquido.',
+        highlightText: 'Registre compras no mercado, lazer ou contas fixas. Veja a divisão de gastos por categorias em gráfico interativo.',
+        demoType: 'transactions'
+    },
+    {
+        id: 'scene_couple',
+        tag: '04 • HARMONIA A DOIS',
+        title: 'Divisão Justa: Você & Esposa',
+        subtitle: 'Transparência total de quem pagou cada conta, sem cobranças ou estresse.',
+        badge: '💑 Modo Casal 50/50',
+        color: 'from-pink-600 to-rose-700',
+        narration: 'Transparência total para nós dois! Sabemos exatamente quem pagou cada conta, mantendo o equilíbrio e comemorando a economia do mês juntos.',
+        highlightText: 'Acompanhe a proporção de gastos de cada um no mês, veja os avatares dedicados e comemorem a economia juntos.',
+        demoType: 'couple'
+    },
+    {
+        id: 'scene_due_alert',
+        tag: '05 • PROTEÇÃO ANTI-JUROS',
+        title: 'Aviso Inteligente de Vencimento',
+        subtitle: 'Nunca mais pague multas ou juros por esquecimento de datas.',
+        badge: '🛡️ Zero Juros',
+        color: 'from-amber-600 to-orange-700',
+        narration: 'Nunca mais pague juros por esquecimento! O aplicativo avisa com antecedência sobre contas a vencer, e você dispensa o aviso com um simples gesto.',
+        highlightText: 'O app avisa quando as contas estão chegando perto do vencimento. Para dispensar, basta arrastar o banner pro lado com o dedo!',
+        demoType: 'due_alert'
+    },
+    {
+        id: 'scene_calendar',
+        tag: '06 • CALENDÁRIO MENSAL',
+        title: 'Agenda & Contas Fixas Recorrentes',
+        subtitle: 'Veja os dias de vencimento e determine livremente os meses de cada contrato.',
+        badge: '📅 Calendário Financeiro',
+        color: 'from-blue-700 to-cyan-700',
+        narration: 'Tenha a visão completa do mês no calendário! Veja as datas de cada pagamento e programe contas fixas para quantos meses você quiser.',
+        highlightText: 'Cadastre contratos e contas recorrentes determinando livremente a quantidade de meses (1, 5, 7, 12 meses).',
+        demoType: 'calendar'
+    },
+    {
+        id: 'scene_goals',
+        tag: '07 • METAS & COFRINHOS',
+        title: 'Nossos Sonhos & Viagens a Dois',
+        subtitle: 'Transformamos nossos objetivos em conquistas com cofrinhos digitais.',
+        badge: '🎯 Conquistas do Casal',
+        color: 'from-purple-700 to-indigo-800',
+        narration: 'Nossos sonhos ganham data e valor! Acompanhamos o crescimento dos nossos cofrinhos para viagens de férias e nosso futuro.',
+        highlightText: 'Defina metas para férias, reforma, reserva de emergência e veja o progresso de cada cofrinho crescendo.',
+        demoType: 'goals'
+    },
+    {
+        id: 'scene_future',
+        tag: '08 • NOSSO FUTURO',
+        title: 'Sincronizado nos Nossos Celulares',
+        subtitle: 'Seguro, criptografado e feito com carinho para a nossa família.',
+        badge: '🚀 Comece Agora',
+        color: 'from-slate-900 via-blue-950 to-indigo-950',
+        narration: 'Tudo sincronizado na nuvem nos nossos celulares com segurança total. Nosso futuro financeiro começa agora!',
+        highlightText: 'Tudo salvo na nuvem com Supabase e IA Gemini para comandos de voz. Vamos construir nosso patrimônio juntos!',
+        demoType: 'future'
+    }
 ];
 
 const initialChallenges = [
@@ -238,6 +329,14 @@ export default function App() {
     const [isPayInvoiceModalOpen, setIsPayInvoiceModalOpen] = useState(false);
     const [invoiceAccountToPay, setInvoiceAccountToPay] = useState(null);
     const [invoiceSourceAccount, setInvoiceSourceAccount] = useState('acc_main');
+
+    // Estados do Modo Apresentação / Vídeo Comercial
+    const [isPresentationModalOpen, setIsPresentationModalOpen] = useState(false);
+    const [presentationScene, setPresentationScene] = useState(0);
+    const [isPresentationPlaying, setIsPresentationPlaying] = useState(true);
+    const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
+    const [demoInteractiveTab, setDemoInteractiveTab] = useState('acc_main');
+    const [demoLiveExpenseAdded, setDemoLiveExpenseAdded] = useState(false);
 
     // 4. Escaneamento de Recibos
     const [isScanningReceipt, setIsScanningReceipt] = useState(false);
@@ -437,6 +536,38 @@ export default function App() {
     const [isRefreshing, setIsRefreshing] = useState(false);
     const touchStartRef = useRef(0);
     const isPullingRef = useRef(false);
+
+    // =========================================================================
+    // EFEITOS DO MODO APRESENTAÇÃO / VÍDEO COMERCIAL DO APP
+    // =========================================================================
+    useEffect(() => {
+        if (!isPresentationModalOpen || !isPresentationPlaying) return;
+        const timer = setInterval(() => {
+            setPresentationScene(prev => (prev + 1) % tourScenes.length);
+        }, 8500);
+        return () => clearInterval(timer);
+    }, [isPresentationModalOpen, isPresentationPlaying, presentationScene]);
+
+    useEffect(() => {
+        if (!isPresentationModalOpen) {
+            if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+            }
+            return;
+        }
+
+        if (isVoiceEnabled && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+            const textToSpeak = tourScenes[presentationScene]?.narration || '';
+            if (textToSpeak) {
+                const utterance = new SpeechSynthesisUtterance(textToSpeak);
+                utterance.lang = 'pt-BR';
+                utterance.rate = 1.02;
+                utterance.pitch = 1.05;
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+    }, [presentationScene, isPresentationModalOpen, isVoiceEnabled]);
 
     // =========================================================================
     // FUNÇÕES AUXILIARES & SUPABASE
@@ -3697,6 +3828,19 @@ Responda ESTRITAMENTE um objeto JSON no formato:
 
                             {/* Controles de Mês & Ações */}
                             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                                {/* Botão Assistir Apresentação / Vídeo Comercial */}
+                                <button
+                                    onClick={() => {
+                                        setPresentationScene(0);
+                                        setIsPresentationPlaying(true);
+                                        setIsPresentationModalOpen(true);
+                                    }}
+                                    className="flex items-center gap-2 bg-gradient-to-r from-amber-400 via-rose-400 to-pink-500 hover:from-amber-300 hover:to-pink-400 text-slate-950 px-3.5 py-2.5 rounded-2xl text-xs font-black shadow-lg transition active:scale-95"
+                                    title="Apresentação Comercial em Vídeo do Aplicativo"
+                                >
+                                    <Play size={14} fill="currentColor" /> ✨ Apresentação do App
+                                </button>
+
                                 {/* Botão Falar com IA Desktop */}
                                 <button
                                     onClick={handleStartVoiceRecording}
@@ -3832,6 +3976,18 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                 )}
 
                                 <div className="border-t border-slate-100 dark:border-slate-800 pt-1">
+                                    <button
+                                        onClick={() => {
+                                            setShowProfileMenu(false);
+                                            setPresentationScene(0);
+                                            setIsPresentationPlaying(true);
+                                            setIsPresentationModalOpen(true);
+                                        }}
+                                        className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-black bg-gradient-to-r from-amber-400 via-rose-400 to-pink-500 text-slate-950 rounded-xl shadow-sm mb-1"
+                                    >
+                                        <Play size={15} fill="currentColor" /> ✨ Apresentação do Nosso App
+                                    </button>
+
                                     <button
                                         onClick={() => { setIsDarkMode(!isDarkMode); setShowProfileMenu(false); }}
                                         className="w-full flex items-center justify-between px-3 py-2 text-xs font-bold rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
@@ -3973,6 +4129,20 @@ Responda ESTRITAMENTE um objeto JSON no formato:
 
                     {/* CORPO DO DASHBOARD / TELAS */}
                     <div className="max-w-7xl w-full mx-auto px-4 sm:px-8 -mt-12 lg:-mt-4">
+
+                        {/* BOTÃO MOBILE DE APRESENTAÇÃO DO APP */}
+                        <div className="sm:hidden mb-3">
+                            <button
+                                onClick={() => {
+                                    setPresentationScene(0);
+                                    setIsPresentationPlaying(true);
+                                    setIsPresentationModalOpen(true);
+                                }}
+                                className="w-full py-2.5 px-4 rounded-2xl bg-gradient-to-r from-amber-400 via-rose-400 to-pink-500 text-slate-950 font-black text-xs shadow-md flex items-center justify-center gap-2 active:scale-95"
+                            >
+                                <Play size={14} fill="currentColor" /> ✨ Assistir Apresentação do Nosso App
+                            </button>
+                        </div>
 
                         {/* BANNER DE CONTAS A VENCER NO TOPO (ANTI-JUROS - ARRASTAR PARA DISPENSAR) */}
                         {!isDueBannerDismissed && upcomingDueBills.length > 0 && (
@@ -9460,6 +9630,363 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                     Esqueci meu PIN
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ========================================================================= */}
+                {/* MODAL DE APRESENTAÇÃO COMERCIAL / TOUR EM VÍDEO DO APLICATIVO */}
+                {/* ========================================================================= */}
+                {isPresentationModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-300">
+                        <div className="relative bg-slate-900 border border-slate-800 text-white w-full max-w-4xl h-full sm:h-auto sm:max-h-[92vh] sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden">
+                            
+                            {/* Topo do Player: Barra de Progresso Segmentada estilo Stories */}
+                            <div className="p-4 sm:p-6 pb-3 border-b border-slate-800/80 bg-slate-950/60 flex flex-col gap-3">
+                                {/* Segmentos de Progresso */}
+                                <div className="grid grid-cols-8 gap-1.5 w-full">
+                                    {tourScenes.map((scene, idx) => (
+                                        <div
+                                            key={scene.id}
+                                            onClick={() => {
+                                                setPresentationScene(idx);
+                                                setIsPresentationPlaying(true);
+                                            }}
+                                            className="h-1.5 rounded-full bg-slate-800 overflow-hidden cursor-pointer relative"
+                                        >
+                                            <div
+                                                className={`h-full transition-all duration-300 ${
+                                                    idx < presentationScene 
+                                                        ? 'w-full bg-gradient-to-r from-blue-500 to-pink-500' 
+                                                        : idx === presentationScene 
+                                                            ? (isPresentationPlaying ? 'w-full bg-gradient-to-r from-amber-400 to-pink-500 animate-pulse' : 'w-1/2 bg-amber-400')
+                                                            : 'w-0'
+                                                }`}
+                                            ></div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Controles de Topo */}
+                                <div className="flex justify-between items-center">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[11px] font-black uppercase tracking-wider text-pink-400 bg-pink-950/60 border border-pink-800/60 px-2.5 py-0.5 rounded-full">
+                                            {tourScenes[presentationScene].tag}
+                                        </span>
+                                        <span className="text-xs text-slate-400 font-bold hidden sm:inline-block">
+                                            Cena {presentationScene + 1} de {tourScenes.length}
+                                        </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                        {/* Botão Narrador / Voz de IA */}
+                                        <button
+                                            onClick={() => setIsVoiceEnabled(!isVoiceEnabled)}
+                                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                                                isVoiceEnabled 
+                                                    ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40' 
+                                                    : 'bg-slate-800 text-slate-400'
+                                            }`}
+                                            title="Ativar/Desativar Narração por Voz"
+                                        >
+                                            {isVoiceEnabled ? <Sparkles size={14} className="text-amber-400" /> : <MicOff size={14} />}
+                                            <span className="hidden sm:inline">{isVoiceEnabled ? 'Voz Ativada' : 'Voz Desativada'}</span>
+                                        </button>
+
+                                        {/* Botão Play / Pause */}
+                                        <button
+                                            onClick={() => setIsPresentationPlaying(!isPresentationPlaying)}
+                                            className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl transition"
+                                            title={isPresentationPlaying ? "Pausar Apresentação" : "Continuar Apresentação"}
+                                        >
+                                            {isPresentationPlaying ? <Pause size={16} /> : <Play size={16} fill="currentColor" />}
+                                        </button>
+
+                                        {/* Botão Fechar */}
+                                        <button
+                                            onClick={() => {
+                                                setIsPresentationModalOpen(false);
+                                                if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                                                    window.speechSynthesis.cancel();
+                                                }
+                                            }}
+                                            className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl transition"
+                                            title="Fechar"
+                                        >
+                                            <X size={16} />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Conteúdo Central da Cena */}
+                            <div className="flex-1 overflow-y-auto p-4 sm:p-8 flex flex-col justify-between gap-6">
+                                
+                                {/* Topo da Cena: Título e Subtítulo */}
+                                <div>
+                                    <div className="flex items-center gap-2 mb-1.5">
+                                        <span className="text-2xl">✨</span>
+                                        <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                                            {tourScenes[presentationScene].title}
+                                        </h2>
+                                    </div>
+                                    <p className="text-xs sm:text-sm text-slate-300 font-medium leading-relaxed">
+                                        {tourScenes[presentationScene].subtitle}
+                                    </p>
+                                </div>
+
+                                {/* Demonstração Visual Dinâmica Específica da Cena */}
+                                <div className="bg-slate-950/80 border border-slate-800/90 rounded-3xl p-5 sm:p-6 shadow-inner relative overflow-hidden flex flex-col justify-center min-h-[220px]">
+                                    
+                                    {/* CENA 1: KPIS E VISÃO GERAL */}
+                                    {tourScenes[presentationScene].demoType === 'kpis' && (
+                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 animate-in fade-in zoom-in-95 duration-300">
+                                            <div className="p-3.5 bg-blue-950/40 border border-blue-500/30 rounded-2xl">
+                                                <span className="text-[10px] font-bold text-blue-300 uppercase">Saldo Líquido</span>
+                                                <p className="text-base sm:text-lg font-black text-white mt-0.5">{formatCurrency(totalLiquidBalance)}</p>
+                                                <span className="text-[9px] text-blue-400 font-extrabold mt-1 inline-block">✓ Em dia</span>
+                                            </div>
+                                            <div className="p-3.5 bg-emerald-950/40 border border-emerald-500/30 rounded-2xl">
+                                                <span className="text-[10px] font-bold text-emerald-300 uppercase">Receitas</span>
+                                                <p className="text-base sm:text-lg font-black text-emerald-400 mt-0.5">{formatCurrency(totals.receitas)}</p>
+                                                <span className="text-[9px] text-emerald-500 font-extrabold mt-1 inline-block">↑ Entradas</span>
+                                            </div>
+                                            <div className="p-3.5 bg-rose-950/40 border border-rose-500/30 rounded-2xl">
+                                                <span className="text-[10px] font-bold text-rose-300 uppercase">Despesas</span>
+                                                <p className="text-base sm:text-lg font-black text-rose-400 mt-0.5">{formatCurrency(totals.despesas)}</p>
+                                                <span className="text-[9px] text-rose-500 font-extrabold mt-1 inline-block">↓ Gastos</span>
+                                            </div>
+                                            <div className="p-3.5 bg-indigo-950/40 border border-indigo-500/30 rounded-2xl">
+                                                <span className="text-[10px] font-bold text-indigo-300 uppercase">Aportes</span>
+                                                <p className="text-base sm:text-lg font-black text-indigo-400 mt-0.5">{formatCurrency(totals.investimentos)}</p>
+                                                <span className="text-[9px] text-indigo-400 font-extrabold mt-1 inline-block">📈 Futuro</span>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* CENA 2: CONTAS COLORIDAS E FILTRO EM 1 TOQUE */}
+                                    {tourScenes[presentationScene].demoType === 'accounts' && (
+                                        <div className="space-y-3 animate-in fade-in duration-300">
+                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                                                {accounts.slice(0, 3).map((acc, i) => (
+                                                    <div
+                                                        key={acc.id}
+                                                        onClick={() => setDemoInteractiveTab(acc.id)}
+                                                        className={`p-3.5 rounded-2xl border transition-all cursor-pointer select-none text-white ${
+                                                            demoInteractiveTab === acc.id 
+                                                                ? 'ring-2 ring-white scale-105 shadow-xl bg-blue-600' 
+                                                                : i === 0 ? 'bg-gradient-to-r from-blue-600 to-indigo-700 opacity-90' : i === 1 ? 'bg-gradient-to-r from-emerald-600 to-teal-700 opacity-90' : 'bg-gradient-to-r from-purple-600 to-rose-600 opacity-90'
+                                                        }`}
+                                                    >
+                                                        <div className="flex justify-between items-center">
+                                                            <span className="text-xs font-black">{acc.name}</span>
+                                                            <span className="text-[10px] font-bold">{demoInteractiveTab === acc.id ? '✓ Ativa' : 'Toque'}</span>
+                                                        </div>
+                                                        <p className="text-base font-black mt-2">{formatCurrency(accountBalances[acc.id] || 0)}</p>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <p className="text-[11px] text-center text-slate-400 font-bold">
+                                                👆 Toque em qualquer cartão acima para simular o filtro instantâneo!
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* CENA 3: LANÇAMENTOS E SOMA AO VIVO */}
+                                    {tourScenes[presentationScene].demoType === 'transactions' && (
+                                        <div className="space-y-3 animate-in fade-in duration-300">
+                                            <div className="flex items-center justify-between p-3 bg-slate-900 border border-slate-800 rounded-2xl">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center font-bold">
+                                                        🛒
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs font-black text-white">Supermercado Whole Foods</p>
+                                                        <span className="text-[10px] text-slate-400">Pago por: 👧 Esposa • Cartão de Crédito</span>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <span className="text-sm font-black text-rose-400">- {formatCurrency(148.50)}</span>
+                                                    <span className="block text-[9px] text-emerald-400 font-extrabold">✓ Somado ao Total</span>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center justify-between p-3 bg-slate-900 border border-slate-800 rounded-2xl">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+                                                        💵
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs font-black text-white">Salário / Receita do Mês</p>
+                                                        <span className="text-[10px] text-slate-400">Recebido por: 👦 Você • Conta Principal</span>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <span className="text-sm font-black text-emerald-400">+ {formatCurrency(4500.00)}</span>
+                                                    <span className="block text-[9px] text-blue-400 font-extrabold">✓ Saldo Atualizado</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* CENA 4: DIVISÃO DO CASAL */}
+                                    {tourScenes[presentationScene].demoType === 'couple' && (
+                                        <div className="space-y-4 animate-in fade-in duration-300">
+                                            <div className="grid grid-cols-2 gap-3 text-center">
+                                                <div className="p-3.5 bg-blue-950/40 border border-blue-500/30 rounded-2xl">
+                                                    <span className="text-xl">👦</span>
+                                                    <p className="text-xs font-black text-blue-300 mt-1">Você (Marido)</p>
+                                                    <p className="text-sm font-black text-white mt-0.5">50% das Despesas</p>
+                                                </div>
+                                                <div className="p-3.5 bg-pink-950/40 border border-pink-500/30 rounded-2xl">
+                                                    <span className="text-xl">👧</span>
+                                                    <p className="text-xs font-black text-pink-300 mt-1">Esposa</p>
+                                                    <p className="text-sm font-black text-white mt-0.5">50% das Despesas</p>
+                                                </div>
+                                            </div>
+                                            <div className="w-full bg-slate-800 h-3 rounded-full overflow-hidden flex shadow-inner">
+                                                <div className="bg-blue-500 w-1/2 h-full"></div>
+                                                <div className="bg-pink-500 w-1/2 h-full"></div>
+                                            </div>
+                                            <p className="text-[11px] text-center text-pink-300 font-extrabold">
+                                                ⚖️ Equilíbrio Perfeito: Cada centavo dividido com harmonia e amor!
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* CENA 5: AVISO ANTI-JUROS */}
+                                    {tourScenes[presentationScene].demoType === 'due_alert' && (
+                                        <div className="space-y-3 animate-in fade-in duration-300">
+                                            <div className="p-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 border border-indigo-500/40 rounded-2xl flex items-center justify-between shadow-xl">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 rounded-xl bg-indigo-500 text-white flex items-center justify-center font-bold">
+                                                        🔔
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs font-black text-white">Conta de Luz & Internet</p>
+                                                        <span className="text-[10px] text-amber-300 font-bold">Vence em 3 dias • R$ 240,00</span>
+                                                    </div>
+                                                </div>
+                                                <span className="text-[10px] font-extrabold bg-indigo-500/20 text-indigo-300 px-2.5 py-1 rounded-lg border border-indigo-500/30">
+                                                    ↔ Arraste p/ dispensar
+                                                </span>
+                                            </div>
+                                            <p className="text-[11px] text-center text-slate-400 font-bold">
+                                                🛡️ Sem sustos no fim do mês. Notificação visual direta na tela inicial!
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* CENA 6: CALENDÁRIO */}
+                                    {tourScenes[presentationScene].demoType === 'calendar' && (
+                                        <div className="space-y-3 animate-in fade-in duration-300">
+                                            <div className="grid grid-cols-7 gap-1.5 text-center text-xs">
+                                                {['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'].map(d => (
+                                                    <span key={d} className="text-[10px] font-extrabold text-slate-500">{d}</span>
+                                                ))}
+                                                {[1, 2, 3, 4, 5, 6, 7].map(day => (
+                                                    <div key={day} className={`p-2 rounded-xl border text-xs font-black ${day === 5 ? 'bg-rose-500/20 border-rose-500 text-rose-300' : day === 1 ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300' : 'bg-slate-900 border-slate-800 text-slate-300'}`}>
+                                                        {day}
+                                                        {day === 5 && <span className="block text-[8px] text-rose-400">Conta</span>}
+                                                        {day === 1 && <span className="block text-[8px] text-emerald-400">Salário</span>}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <p className="text-[11px] text-center text-cyan-300 font-bold">
+                                                📅 Contratos vigentes e contas recorrentes configurados com período livre (1, 5, 7 ou 12 meses).
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* CENA 7: METAS & COFRINHOS */}
+                                    {tourScenes[presentationScene].demoType === 'goals' && (
+                                        <div className="space-y-3 animate-in fade-in duration-300">
+                                            <div className="p-3 bg-slate-900 border border-slate-800 rounded-2xl space-y-1.5">
+                                                <div className="flex justify-between text-xs font-black">
+                                                    <span className="flex items-center gap-1.5">🏖️ Viagem dos Sonhos</span>
+                                                    <span className="text-amber-400">75% Concluído</span>
+                                                </div>
+                                                <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
+                                                    <div className="bg-gradient-to-r from-amber-400 to-orange-500 h-full w-3/4 animate-pulse"></div>
+                                                </div>
+                                            </div>
+                                            <div className="p-3 bg-slate-900 border border-slate-800 rounded-2xl space-y-1.5">
+                                                <div className="flex justify-between text-xs font-black">
+                                                    <span className="flex items-center gap-1.5">🛡️ Reserva de Emergência</span>
+                                                    <span className="text-emerald-400">90% Concluído</span>
+                                                </div>
+                                                <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
+                                                    <div className="bg-gradient-to-r from-emerald-400 to-teal-500 h-full w-[90%]"></div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* CENA 8: NOSSO FUTURO */}
+                                    {tourScenes[presentationScene].demoType === 'future' && (
+                                        <div className="text-center space-y-4 animate-in fade-in duration-300">
+                                            <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-amber-400 via-rose-500 to-purple-600 mx-auto flex items-center justify-center text-3xl shadow-xl shadow-pink-500/20">
+                                                💑
+                                            </div>
+                                            <div>
+                                                <h3 className="text-lg font-black text-white">Feito com Amor para o Nosso Sucesso!</h3>
+                                                <p className="text-xs text-slate-300 font-medium max-w-md mx-auto mt-1">
+                                                    Todos os dados salvos em nuvem e protegidos. Nosso patrimônio cresce junto a cada dia!
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={() => {
+                                                    setIsPresentationModalOpen(false);
+                                                    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                                                        window.speechSynthesis.cancel();
+                                                    }
+                                                }}
+                                                className="px-6 py-3 bg-gradient-to-r from-amber-400 via-rose-400 to-pink-500 hover:from-amber-300 hover:to-pink-400 text-slate-950 font-black text-sm rounded-2xl shadow-xl transition active:scale-95"
+                                            >
+                                                🚀 Começar a Usar Agora
+                                            </button>
+                                        </div>
+                                    )}
+
+                                </div>
+
+                                {/* Base do Player: Texto explicativo e Botões de Navegação */}
+                                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-2 border-t border-slate-800/80">
+                                    <p className="text-xs text-slate-300 font-medium text-center sm:text-left">
+                                        {tourScenes[presentationScene].highlightText}
+                                    </p>
+
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <button
+                                            disabled={presentationScene === 0}
+                                            onClick={() => {
+                                                setPresentationScene(prev => Math.max(0, prev - 1));
+                                                setIsPresentationPlaying(true);
+                                            }}
+                                            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:pointer-events-none text-white transition flex items-center gap-1 text-xs font-bold"
+                                        >
+                                            <ChevronLeft size={16} /> Anterior
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                if (presentationScene === tourScenes.length - 1) {
+                                                    setIsPresentationModalOpen(false);
+                                                    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                                                        window.speechSynthesis.cancel();
+                                                    }
+                                                } else {
+                                                    setPresentationScene(prev => prev + 1);
+                                                    setIsPresentationPlaying(true);
+                                                }
+                                            }}
+                                            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white transition flex items-center gap-1.5 text-xs font-black shadow-lg"
+                                        >
+                                            {presentationScene === tourScenes.length - 1 ? 'Concluir ✨' : 'Próxima'} <ChevronRight size={16} />
+                                        </button>
+                                    </div>
+                                </div>
+
+                            </div>
+
                         </div>
                     </div>
                 )}
