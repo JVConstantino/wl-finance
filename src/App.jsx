@@ -3998,25 +3998,27 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                     opacity: isDraggingBanner ? Math.max(0.1, 1 - Math.abs(bannerSwipeX) / 200) : (bannerSwipeX !== 0 ? 0 : 1),
                                     transition: isDraggingBanner ? 'none' : 'transform 0.22s ease-out, opacity 0.22s ease-out'
                                 }}
-                                className="mb-4 bg-gradient-to-r from-amber-500/15 via-rose-500/15 to-amber-500/15 dark:from-amber-950/40 dark:via-rose-950/40 dark:to-amber-950/40 border border-amber-300 dark:border-amber-700/60 rounded-3xl p-3.5 sm:p-4 flex items-center justify-between gap-3 shadow-sm backdrop-blur-md cursor-grab active:cursor-grabbing select-none relative overflow-hidden"
+                                className="mb-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white border border-indigo-500/30 shadow-xl shadow-indigo-950/20 rounded-3xl p-4 flex items-center justify-between gap-3 backdrop-blur-xl cursor-grab active:cursor-grabbing select-none relative overflow-hidden"
                             >
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-amber-500/30 animate-bounce pointer-events-none">
-                                        <Bell size={20} />
+                                <div className="flex items-center gap-3.5">
+                                    <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-500 via-indigo-600 to-purple-600 text-white flex items-center justify-center shrink-0 shadow-lg shadow-indigo-500/25 pointer-events-none">
+                                        <Bell size={20} className="animate-pulse" />
                                     </div>
                                     <div className="pointer-events-none">
-                                        <p className="text-xs sm:text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5">
-                                            <span>⚠️ {upcomingDueBills.length} {upcomingDueBills.length === 1 ? 'conta vence' : 'contas vencem'} em breve</span>
-                                            <span className="text-rose-600 dark:text-rose-400 font-extrabold">({formatCurrency(totalUpcomingDue)})</span>
-                                        </p>
-                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                                            Evite multas e juros mantendo os pagamentos em dia.
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="text-xs sm:text-sm font-black text-white tracking-tight">Lembrete de Vencimento</span>
+                                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                                                {upcomingDueBills.length} {upcomingDueBills.length === 1 ? 'conta' : 'contas'} • {formatCurrency(totalUpcomingDue)}
+                                            </span>
+                                        </div>
+                                        <p className="text-[11px] sm:text-xs text-slate-300/90 font-medium mt-0.5">
+                                            Contas com vencimento nos próximos 7 dias para você manter seu fluxo em dia.
                                         </p>
                                     </div>
                                 </div>
 
-                                <div className="flex items-center gap-2">
-                                    <span className="text-[10px] font-bold text-amber-700/70 dark:text-amber-400/70 hidden sm:inline-block">
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <span className="text-[10px] font-bold text-slate-400 hidden sm:inline-block">
                                         ↔ Arraste para dispensar
                                     </span>
                                     <button
@@ -4025,10 +4027,10 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                             e.stopPropagation();
                                             setIsDueBannerDismissed(true);
                                         }}
-                                        className="p-1.5 rounded-full hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 transition"
+                                        className="p-2 rounded-xl bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition"
                                         title="Dispensar aviso"
                                     >
-                                        <X size={18} />
+                                        <X size={16} />
                                     </button>
                                 </div>
                             </div>
