@@ -4170,59 +4170,86 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                     const isNegativeCredit = acc.type === 'credito' && currentBalance < 0;
                                                     const isSelected = selectedAccountId === acc.id;
 
+                                                    // Identidade visual vibrante, colorida e marcante
+                                                    let cardStyle = {
+                                                        bg: 'from-blue-600 via-indigo-600 to-blue-800',
+                                                        icon: <Landmark size={20} className="text-white" />,
+                                                        watermark: <Landmark size={90} className="text-white" />,
+                                                        typeLabel: 'Conta Bancária',
+                                                        balanceLabel: 'Saldo Disponível',
+                                                        symbol: '🏛️'
+                                                    };
+
+                                                    if (acc.type === 'credito') {
+                                                        cardStyle = {
+                                                            bg: 'from-purple-600 via-pink-600 to-rose-600',
+                                                            icon: <CreditCard size={20} className="text-white" />,
+                                                            watermark: <CreditCard size={90} className="text-white" />,
+                                                            typeLabel: 'Cartão de Crédito',
+                                                            balanceLabel: 'Fatura Atual',
+                                                            symbol: '💳'
+                                                        };
+                                                    } else if (acc.type === 'dinheiro') {
+                                                        cardStyle = {
+                                                            bg: 'from-emerald-600 via-teal-600 to-emerald-800',
+                                                            icon: <Wallet size={20} className="text-white" />,
+                                                            watermark: <span className="text-8xl font-black font-serif text-white select-none leading-none opacity-80">$</span>,
+                                                            typeLabel: 'Carteira Física • Dólares',
+                                                            balanceLabel: 'Dinheiro em Mãos',
+                                                            symbol: '💵'
+                                                        };
+                                                    }
+
                                                     return (
                                                         <div
                                                             key={acc.id}
                                                             onClick={() => setSelectedAccountId(prev => prev === acc.id ? 'todos' : acc.id)}
-                                                            className={`p-5 rounded-3xl transition-all cursor-pointer select-none active:scale-[0.98] border flex flex-col justify-between h-40 ${
-                                                                isSelected
-                                                                    ? 'bg-blue-600 text-white shadow-xl shadow-blue-600/25 border-blue-500 scale-[1.02]'
-                                                                    : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-white border-slate-100 dark:border-slate-800/80 hover:border-slate-300 dark:hover:border-slate-700 shadow-sm hover:shadow-md'
+                                                            className={`rounded-3xl p-5 shadow-lg bg-gradient-to-br ${cardStyle.bg} text-white relative overflow-hidden flex flex-col justify-between h-44 border transition-all cursor-pointer select-none active:scale-[0.98] ${
+                                                                isSelected 
+                                                                    ? 'ring-4 ring-white/80 shadow-2xl scale-[1.02] border-white/60' 
+                                                                    : 'border-white/20 hover:border-white/40 hover:shadow-xl hover:scale-[1.01]'
                                                             }`}
                                                         >
-                                                            <div className="flex justify-between items-start">
-                                                                <div className="flex items-center gap-3">
-                                                                    <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
-                                                                        isSelected 
-                                                                            ? 'bg-white/20 text-white' 
-                                                                            : acc.type === 'banco'
-                                                                                ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400'
-                                                                                : acc.type === 'credito'
-                                                                                    ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
-                                                                                    : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400'
-                                                                    }`}>
-                                                                        {acc.type === 'banco' ? <Landmark size={20} /> : acc.type === 'credito' ? <CreditCard size={20} /> : <Wallet size={20} />}
+                                                            {/* Marca d'água estilizada no fundo */}
+                                                            <div className="absolute -right-3 -bottom-3 opacity-15 pointer-events-none">
+                                                                {cardStyle.watermark}
+                                                            </div>
+
+                                                            {/* Topo do Cartão */}
+                                                            <div className="flex justify-between items-start z-10">
+                                                                <div className="flex items-center gap-2.5">
+                                                                    <div className="w-9 h-9 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center shadow-sm">
+                                                                        {cardStyle.icon}
                                                                     </div>
                                                                     <div>
-                                                                        <h4 className={`text-sm font-extrabold leading-tight ${isSelected ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
+                                                                        <h4 className="text-sm font-black text-white leading-tight">
                                                                             {acc.name}
                                                                         </h4>
-                                                                        <span className={`text-[11px] font-bold ${isSelected ? 'text-blue-100' : 'text-slate-400'}`}>
-                                                                            {acc.type === 'banco' ? 'Conta Bancária' : acc.type === 'credito' ? 'Cartão de Crédito' : 'Dinheiro em Espécie'}
+                                                                        <span className="text-[10px] font-bold text-white/80">
+                                                                            {cardStyle.typeLabel}
                                                                         </span>
                                                                     </div>
                                                                 </div>
 
-                                                                {isSelected && (
-                                                                    <span className="text-[10px] font-black bg-white text-blue-600 px-2.5 py-0.5 rounded-full shadow-sm">
+                                                                {isSelected ? (
+                                                                    <span className="text-[10px] font-black bg-white text-slate-900 px-2.5 py-0.5 rounded-full shadow flex items-center gap-1 animate-in fade-in">
                                                                         ✓ Filtrando
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="text-[10px] font-bold bg-black/15 text-white/90 px-2 py-0.5 rounded-lg">
+                                                                        {cardStyle.symbol}
                                                                     </span>
                                                                 )}
                                                             </div>
 
-                                                            <div className="pt-2">
-                                                                <div className="flex items-baseline justify-between">
+                                                            {/* Base do Cartão */}
+                                                            <div className="z-10 pt-2 border-t border-white/15">
+                                                                <div className="flex items-end justify-between">
                                                                     <div>
-                                                                        <span className={`text-[10px] font-bold uppercase tracking-wider block ${isSelected ? 'text-blue-200' : 'text-slate-400'}`}>
-                                                                            {acc.type === 'credito' ? 'Fatura Atual' : 'Saldo da Conta'}
+                                                                        <span className="text-[10px] font-bold uppercase tracking-wider text-white/80 block mb-0.5">
+                                                                            {cardStyle.balanceLabel}
                                                                         </span>
-                                                                        <h3 className={`text-2xl font-black tracking-tight ${
-                                                                            isSelected 
-                                                                                ? 'text-white' 
-                                                                                : (acc.type === 'credito' && currentBalance < 0) 
-                                                                                    ? 'text-rose-600 dark:text-rose-400' 
-                                                                                    : 'text-slate-900 dark:text-white'
-                                                                        }`}>
+                                                                        <h3 className="text-2xl sm:text-[26px] font-black tracking-tight text-white drop-shadow-sm leading-tight">
                                                                             {formatCurrency(currentBalance)}
                                                                         </h3>
                                                                     </div>
@@ -4230,20 +4257,16 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                                     {isNegativeCredit ? (
                                                                         <button
                                                                             onClick={(e) => { 
-                                                                                e.stopPropagation();
-                                                                                setInvoiceAccountToPay(acc); 
-                                                                                setIsPayInvoiceModalOpen(true); 
-                                                                            }}
-                                                                            className={`text-xs font-black py-1.5 px-3 rounded-xl transition shadow flex items-center gap-1 active:scale-95 ${
-                                                                                isSelected 
-                                                                                    ? 'bg-white text-blue-600 hover:bg-blue-50' 
-                                                                                    : 'bg-rose-600 hover:bg-rose-700 text-white'
-                                                                            }`}
+                                                                            e.stopPropagation();
+                                                                            setInvoiceAccountToPay(acc); 
+                                                                            setIsPayInvoiceModalOpen(true); 
+                                                                        }}
+                                                                            className="bg-white hover:bg-slate-100 text-slate-900 text-xs font-black py-1.5 px-3 rounded-xl transition shadow flex items-center gap-1 active:scale-95"
                                                                         >
-                                                                            <CheckCircle2 size={13} /> Pagar
+                                                                            <CheckCircle2 size={13} className="text-rose-600" /> Pagar Fatura
                                                                         </button>
                                                                     ) : (
-                                                                        <span className={`text-[10px] font-bold ${isSelected ? 'text-blue-200' : 'text-slate-400'}`}>
+                                                                        <span className="text-[10px] font-bold text-white/80 flex items-center gap-1">
                                                                             {isSelected ? 'Toque p/ limpar' : 'Ver Extrato →'}
                                                                         </span>
                                                                     )}
