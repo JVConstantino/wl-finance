@@ -284,6 +284,12 @@ export default function App() {
         extendMonths: '4'
     });
 
+    // 5.6 Estado do Banner de Contas a Vencer (Arrastar para dispensar na sessão atual)
+    const [isDueBannerDismissed, setIsDueBannerDismissed] = useState(false);
+    const [bannerSwipeX, setBannerSwipeX] = useState(0);
+    const [isDraggingBanner, setIsDraggingBanner] = useState(false);
+    const bannerTouchStartX = useRef(0);
+
     // 6. Estados do Supabase (Nuvem & Auth)
     const [supabaseUser, setSupabaseUser] = useState(null);
     const [supabaseConfig, setSupabaseConfigState] = useState(() => getSupabaseConfig());
@@ -3936,14 +3942,69 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                     {/* CORPO DO DASHBOARD / TELAS */}
                     <div className="max-w-7xl w-full mx-auto px-4 sm:px-8 -mt-12 lg:-mt-4">
 
-                        {/* BANNER DE CONTAS A VENCER NO TOPO (ANTI-JUROS) */}
-                        {upcomingDueBills.length > 0 && (
-                            <div className="mb-4 bg-gradient-to-r from-amber-500/15 via-rose-500/15 to-amber-500/15 dark:from-amber-950/40 dark:via-rose-950/40 dark:to-amber-950/40 border border-amber-300 dark:border-amber-700/60 rounded-3xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm backdrop-blur-md">
+                        {/* BANNER DE CONTAS A VENCER NO TOPO (ANTI-JUROS - ARRASTAR PARA DISPENSAR) */}
+                        {!isDueBannerDismissed && upcomingDueBills.length > 0 && (
+                            <div
+                                onTouchStart={e => {
+                                    bannerTouchStartX.current = e.touches[0].clientX;
+                                    setIsDraggingBanner(true);
+                                }}
+                                onTouchMove={e => {
+                                    const deltaX = e.touches[0].clientX - bannerTouchStartX.current;
+                                    setBannerSwipeX(deltaX);
+                                }}
+                                onTouchEnd={() => {
+                                    setIsDraggingBanner(false);
+                                    if (Math.abs(bannerSwipeX) > 75) {
+                                        setBannerSwipeX(bannerSwipeX > 0 ? 500 : -500);
+                                        setTimeout(() => {
+                                            setIsDueBannerDismissed(true);
+                                            setBannerSwipeX(0);
+                                        }, 200);
+                                    } else {
+                                        setBannerSwipeX(0);
+                                    }
+                                }}
+                                onMouseDown={e => {
+                                    bannerTouchStartX.current = e.clientX;
+                                    setIsDraggingBanner(true);
+                                }}
+                                onMouseMove={e => {
+                                    if (!isDraggingBanner) return;
+                                    const deltaX = e.clientX - bannerTouchStartX.current;
+                                    setBannerSwipeX(deltaX);
+                                }}
+                                onMouseUp={() => {
+                                    if (!isDraggingBanner) return;
+                                    setIsDraggingBanner(false);
+                                    if (Math.abs(bannerSwipeX) > 75) {
+                                        setBannerSwipeX(bannerSwipeX > 0 ? 500 : -500);
+                                        setTimeout(() => {
+                                            setIsDueBannerDismissed(true);
+                                            setBannerSwipeX(0);
+                                        }, 200);
+                                    } else {
+                                        setBannerSwipeX(0);
+                                    }
+                                }}
+                                onMouseLeave={() => {
+                                    if (isDraggingBanner) {
+                                        setIsDraggingBanner(false);
+                                        setBannerSwipeX(0);
+                                    }
+                                }}
+                                style={{
+                                    transform: `translateX(${bannerSwipeX}px)`,
+                                    opacity: isDraggingBanner ? Math.max(0.1, 1 - Math.abs(bannerSwipeX) / 200) : (bannerSwipeX !== 0 ? 0 : 1),
+                                    transition: isDraggingBanner ? 'none' : 'transform 0.22s ease-out, opacity 0.22s ease-out'
+                                }}
+                                className="mb-4 bg-gradient-to-r from-amber-500/15 via-rose-500/15 to-amber-500/15 dark:from-amber-950/40 dark:via-rose-950/40 dark:to-amber-950/40 border border-amber-300 dark:border-amber-700/60 rounded-3xl p-3.5 sm:p-4 flex items-center justify-between gap-3 shadow-sm backdrop-blur-md cursor-grab active:cursor-grabbing select-none relative overflow-hidden"
+                            >
                                 <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-amber-500/30 animate-bounce">
+                                    <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-amber-500/30 animate-bounce pointer-events-none">
                                         <Bell size={20} />
                                     </div>
-                                    <div>
+                                    <div className="pointer-events-none">
                                         <p className="text-xs sm:text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5">
                                             <span>⚠️ {upcomingDueBills.length} {upcomingDueBills.length === 1 ? 'conta vence' : 'contas vencem'} em breve</span>
                                             <span className="text-rose-600 dark:text-rose-400 font-extrabold">({formatCurrency(totalUpcomingDue)})</span>
@@ -3953,12 +4014,23 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                         </p>
                                     </div>
                                 </div>
-                                <button
-                                    onClick={() => setFilterType('pendentes')}
-                                    className="w-full sm:w-auto px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-black rounded-2xl shadow-sm transition flex items-center justify-center gap-1.5 shrink-0"
-                                >
-                                    <CheckCircle2 size={15} /> Ver & Pagar
-                                </button>
+
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-bold text-amber-700/70 dark:text-amber-400/70 hidden sm:inline-block">
+                                        ↔ Arraste para dispensar
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setIsDueBannerDismissed(true);
+                                        }}
+                                        className="p-1.5 rounded-full hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 transition"
+                                        title="Dispensar aviso"
+                                    >
+                                        <X size={18} />
+                                    </button>
+                                </div>
                             </div>
                         )}
 
