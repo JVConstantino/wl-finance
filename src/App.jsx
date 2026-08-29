@@ -3094,9 +3094,11 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                 accountId: formData.accountId,
                 paidBy: formData.paidBy || 'conjunto'
             };
-            saveTransaction(newT);
 
             if (formData.isRepeating) {
+                const ruleId = 'rule_' + Date.now().toString();
+                newT.isFromRepeatRule = ruleId;
+
                 const isFixed = formData.repeatDurationMode === 'fixed';
                 const durMonths = isFixed ? (parseInt(formData.repeatDurationMonths, 10) || 4) : null;
                 const startMonthStr = formData.date.slice(0, 7);
@@ -3112,7 +3114,7 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                 }
 
                 const newRule = {
-                    id: 'rule_' + Date.now().toString(),
+                    id: ruleId,
                     type: formData.type,
                     amount: amt,
                     category: formData.category,
@@ -3126,6 +3128,8 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                 };
                 saveRule(newRule);
             }
+
+            saveTransaction(newT);
             showToast('Adicionado com sucesso!');
         }
         setIsFormOpen(false);
@@ -5923,16 +5927,24 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                             const hasDespesa = dayTxs.some(t => t.type === 'saida');
                                             const hasReceita = dayTxs.some(t => t.type === 'entrada');
 
-                                            const activeRulesOnDay = repeatingRules.filter(r => {
+                                            // Contas fixas válidas que ainda NÃO foram efetivadas como transação neste mês/dia
+                                            const unfulfilledRulesOnDay = repeatingRules.filter(r => {
                                                 if (Number(r.day) !== day) return false;
-                                                if (!r.durationMonths || Number(r.durationMonths) <= 0 || !r.startDate) return true;
-                                                const [sY, sM] = r.startDate.split('-').map(Number);
-                                                const currY = currentDate.getFullYear();
-                                                const currM = currentDate.getMonth() + 1;
-                                                const diff = (currY - sY) * 12 + (currM - sM);
-                                                return diff >= 0 && diff < Number(r.durationMonths);
+                                                if (r.durationMonths && Number(r.durationMonths) > 0 && r.startDate) {
+                                                    const [sY, sM] = r.startDate.split('-').map(Number);
+                                                    const currY = currentDate.getFullYear();
+                                                    const currM = currentDate.getMonth() + 1;
+                                                    const diff = (currY - sY) * 12 + (currM - sM);
+                                                    if (diff < 0 || diff >= Number(r.durationMonths)) return false;
+                                                }
+                                                // Não exibe regra pendente se a transação correspondente já foi lançada neste dia
+                                                const alreadyExists = dayTxs.some(t =>
+                                                    t.isFromRepeatRule === r.id ||
+                                                    (t.description?.toLowerCase().trim() === r.description?.toLowerCase().trim() && Math.abs(Number(t.amount) - Number(r.amount)) < 0.01)
+                                                );
+                                                return !alreadyExists;
                                             });
-                                            const hasFixedRule = activeRulesOnDay.length > 0;
+                                            const hasPendingFixedRule = unfulfilledRulesOnDay.length > 0;
 
                                             const isSelected = selectedDay === day;
 
@@ -5946,7 +5958,7 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                     <div className="flex gap-0.5 absolute bottom-1.5">
                                                         {hasReceita && <div className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-emerald-500'}`}></div>}
                                                         {hasDespesa && <div className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-rose-500'}`}></div>}
-                                                        {hasFixedRule && <div className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-amber-400'}`}></div>}
+                                                        {hasPendingFixedRule && <div className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-amber-400'}`}></div>}
                                                     </div>
                                                 </button>
                                             );
@@ -5966,7 +5978,7 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                     id: '',
                                                     type: 'saida',
                                                     amount: '',
-                                                    category: 'Casa',
+                                                    category: (allCategories.saida && allCategories.saida[0]) || 'Casa',
                                                     description: '',
                                                     day: selectedDay.toString(),
                                                     accountId: 'acc_main',
@@ -5984,57 +5996,76 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                     </div>
 
                                     <div className="space-y-3">
-                                        {/* Contas Fixas Recorrentes Válidas no Dia */}
-                                        {repeatingRules.filter(r => {
-                                            if (Number(r.day) !== selectedDay) return false;
-                                            if (!r.durationMonths || Number(r.durationMonths) <= 0 || !r.startDate) return true;
-                                            const [sY, sM] = r.startDate.split('-').map(Number);
-                                            const currY = currentDate.getFullYear();
-                                            const currM = currentDate.getMonth() + 1;
-                                            const diff = (currY - sY) * 12 + (currM - sM);
-                                            return diff >= 0 && diff < Number(r.durationMonths);
-                                        }).map(r => {
-                                            const validity = getRuleValidity(r);
+                                        {/* 1. Contas Fixas Programadas que ainda não foram lançadas manualmente */}
+                                        {(() => {
+                                            const dayTransactions = monthlyTransactions.filter(t => new Date(t.date + 'T12:00:00').getDate() === selectedDay && t.type !== 'transferencia');
+                                            const pendingRules = repeatingRules.filter(r => {
+                                                if (Number(r.day) !== selectedDay) return false;
+                                                if (r.durationMonths && Number(r.durationMonths) > 0 && r.startDate) {
+                                                    const [sY, sM] = r.startDate.split('-').map(Number);
+                                                    const currY = currentDate.getFullYear();
+                                                    const currM = currentDate.getMonth() + 1;
+                                                    const diff = (currY - sY) * 12 + (currM - sM);
+                                                    if (diff < 0 || diff >= Number(r.durationMonths)) return false;
+                                                }
+                                                const alreadyExists = dayTransactions.some(t =>
+                                                    t.isFromRepeatRule === r.id ||
+                                                    (t.description?.toLowerCase().trim() === r.description?.toLowerCase().trim() && Math.abs(Number(t.amount) - Number(r.amount)) < 0.01)
+                                                );
+                                                return !alreadyExists;
+                                            });
+
+                                            return pendingRules.map(r => {
+                                                const validity = getRuleValidity(r);
+                                                return (
+                                                    <div key={`rule-${r.id}`} className="p-3.5 bg-amber-50/70 dark:bg-amber-950/30 rounded-2xl flex justify-between items-center border border-amber-200/60 dark:border-amber-900/40">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="p-2.5 rounded-xl bg-white dark:bg-slate-800 text-amber-500 shadow-sm">
+                                                                <Clock size={16} />
+                                                            </div>
+                                                            <div>
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <p className="font-extrabold text-slate-800 dark:text-white text-xs">{r.description}</p>
+                                                                    <span className="text-[9px] bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-300 px-1.5 py-0.2 rounded font-black uppercase tracking-wider">Programado</span>
+                                                                </div>
+                                                                <p className="text-[10px] text-amber-700 dark:text-amber-400 font-medium">
+                                                                    {validity.shortText} • {r.category} • {r.paidBy === 'marido' ? '👦 Marido' : (r.paidBy === 'esposa' ? '👧 Esposa' : '👥 Casal')}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <p className={`font-black text-xs ${r.type === 'entrada' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                            {r.type === 'entrada' ? '+' : '-'}{formatCurrency(r.amount)}
+                                                        </p>
+                                                    </div>
+                                                );
+                                            });
+                                        })()}
+
+                                        {/* 2. Transações Reais Lançadas no Dia */}
+                                        {monthlyTransactions.filter(t => new Date(t.date + 'T12:00:00').getDate() === selectedDay).map(t => {
+                                            const isFixedLinked = t.isFromRepeatRule || repeatingRules.some(r => r.description?.toLowerCase().trim() === t.description?.toLowerCase().trim());
                                             return (
-                                                <div key={`rule-${r.id}`} className="p-3.5 bg-amber-50/70 dark:bg-amber-950/30 rounded-2xl flex justify-between items-center border border-amber-200/60 dark:border-amber-900/40">
+                                                <div key={t.id} className="p-3.5 bg-slate-50 dark:bg-slate-950 rounded-2xl flex justify-between items-center">
                                                     <div className="flex items-center gap-3">
-                                                        <div className="p-2.5 rounded-xl bg-white dark:bg-slate-800 text-amber-500 shadow-sm">
-                                                            <Clock size={16} />
+                                                        <div className="p-2.5 rounded-xl bg-white dark:bg-slate-800">
+                                                            {getCategoryIcon(t.category)}
                                                         </div>
                                                         <div>
                                                             <div className="flex items-center gap-1.5">
-                                                                <p className="font-extrabold text-slate-800 dark:text-white text-xs">{r.description}</p>
-                                                                <span className="text-[9px] bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-300 px-1.5 py-0.2 rounded font-black uppercase tracking-wider">Conta Fixa</span>
+                                                                <p className="font-extrabold text-slate-800 dark:text-white text-xs">{t.description}</p>
+                                                                {isFixedLinked && (
+                                                                    <span className="text-[9px] bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 px-1.5 py-0.2 rounded font-black uppercase tracking-wider">Conta Fixa</span>
+                                                                )}
                                                             </div>
-                                                            <p className="text-[10px] text-amber-700 dark:text-amber-400 font-medium">
-                                                                {validity.shortText} • {r.category} • {r.paidBy === 'marido' ? '👦 Marido' : (r.paidBy === 'esposa' ? '👧 Esposa' : '👥 Casal')}
-                                                            </p>
+                                                            <p className="text-[10px] text-slate-400">{t.category} • {t.paidBy === 'marido' ? '👦 Marido' : (t.paidBy === 'esposa' ? '👧 Esposa' : '👥 Casal')}</p>
                                                         </div>
                                                     </div>
-                                                    <p className={`font-black text-xs ${r.type === 'entrada' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                                        {r.type === 'entrada' ? '+' : '-'}{formatCurrency(r.amount)}
+                                                    <p className={`font-black text-xs ${t.type === 'entrada' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                        {t.type === 'entrada' ? '+' : '-'}{formatCurrency(t.amount)}
                                                     </p>
                                                 </div>
                                             );
                                         })}
-
-                                        {/* Transações Reais Lançadas no Dia */}
-                                        {monthlyTransactions.filter(t => new Date(t.date + 'T12:00:00').getDate() === selectedDay).map(t => (
-                                            <div key={t.id} className="p-3.5 bg-slate-50 dark:bg-slate-950 rounded-2xl flex justify-between items-center">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="p-2.5 rounded-xl bg-white dark:bg-slate-800">
-                                                        {getCategoryIcon(t.category)}
-                                                    </div>
-                                                    <div>
-                                                        <p className="font-extrabold text-slate-800 dark:text-white text-xs">{t.description}</p>
-                                                        <p className="text-[10px] text-slate-400">{t.category}</p>
-                                                    </div>
-                                                </div>
-                                                <p className={`font-black text-xs ${t.type === 'entrada' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                                    {t.type === 'entrada' ? '+' : '-'}{formatCurrency(t.amount)}
-                                                </p>
-                                            </div>
-                                        ))}
 
                                         {/* Estado Vazio caso não tenha nada no dia */}
                                         {monthlyTransactions.filter(t => new Date(t.date + 'T12:00:00').getDate() === selectedDay).length === 0 &&
