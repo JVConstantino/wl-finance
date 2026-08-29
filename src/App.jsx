@@ -211,6 +211,7 @@ export default function App() {
     const [selectedDay, setSelectedDay] = useState(new Date().getDate());
     const [searchQuery, setSearchQuery] = useState('');
     const [filterType, setFilterType] = useState('todos');
+    const [selectedAccountId, setSelectedAccountId] = useState('todos');
 
     // 3. Modais e Formulários
     const [isFormOpen, setIsFormOpen] = useState(false);
@@ -971,9 +972,20 @@ export default function App() {
             if (filterType === 'saida') filterMatch = t.type === 'saida';
             if (filterType === 'investimento') filterMatch = t.type === 'investimento';
             if (filterType === 'pendentes') filterMatch = t.status === 'pendente';
-            return searchMatch && filterMatch;
+
+            let accountMatch = true;
+            if (selectedAccountId && selectedAccountId !== 'todos') {
+                accountMatch = t.accountId === selectedAccountId || t.sourceAccountId === selectedAccountId || t.targetAccountId === selectedAccountId;
+            }
+
+            return searchMatch && filterMatch && accountMatch;
         });
-    }, [monthlyTransactions, searchQuery, filterType]);
+    }, [monthlyTransactions, searchQuery, filterType, selectedAccountId]);
+
+    const selectedAccountObj = useMemo(() => {
+        if (!selectedAccountId || selectedAccountId === 'todos') return null;
+        return accounts.find(a => a.id === selectedAccountId) || null;
+    }, [selectedAccountId, accounts]);
 
     // Saldos das Contas
     const accountBalances = useMemo(() => {
@@ -995,6 +1007,26 @@ export default function App() {
         });
         return balances;
     }, [transactions, accounts]);
+
+    const selectedAccountStats = useMemo(() => {
+        if (!selectedAccountObj) return null;
+        const currentBalance = accountBalances[selectedAccountObj.id] || 0;
+        const accountTxs = monthlyTransactions.filter(t => t.accountId === selectedAccountObj.id || t.sourceAccountId === selectedAccountObj.id || t.targetAccountId === selectedAccountObj.id);
+        const monthIncome = accountTxs.filter(t => t.type === 'entrada' && t.status === 'pago').reduce((a, b) => a + b.amount, 0);
+        const monthExpenses = accountTxs.filter(t => t.type === 'saida' && t.status === 'pago').reduce((a, b) => a + b.amount, 0);
+        const monthInvest = accountTxs.filter(t => t.type === 'investimento' && t.status === 'pago').reduce((a, b) => a + b.amount, 0);
+        const monthPending = accountTxs.filter(t => t.status === 'pendente').reduce((a, b) => a + b.amount, 0);
+        const count = accountTxs.length;
+
+        return {
+            balance: currentBalance,
+            income: monthIncome,
+            expenses: monthExpenses,
+            invest: monthInvest,
+            pending: monthPending,
+            count
+        };
+    }, [selectedAccountObj, accountBalances, monthlyTransactions]);
 
     const totals = useMemo(() => {
         return monthlyTransactions.reduce((acc, curr) => {
@@ -4107,8 +4139,22 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                         <div>
                                             <div className="flex flex-wrap justify-between items-center gap-2 mb-3 px-1">
                                                 <div>
-                                                    <h3 className="text-base font-black text-slate-800 dark:text-white">Minhas Contas & Cartões</h3>
-                                                    <span className="text-xs font-bold text-slate-400">{accounts.length} contas configuradas</span>
+                                                    <div className="flex items-center gap-2">
+                                                        <h3 className="text-base font-black text-slate-800 dark:text-white">Minhas Contas & Cartões</h3>
+                                                        {selectedAccountId !== 'todos' && (
+                                                            <button
+                                                                onClick={() => setSelectedAccountId('todos')}
+                                                                className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-100 dark:bg-blue-950/80 text-blue-600 dark:text-blue-400 hover:bg-blue-200 transition flex items-center gap-1"
+                                                            >
+                                                                <X size={12} /> Ver Todas
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    <span className="text-xs font-bold text-slate-400">
+                                                        {selectedAccountId === 'todos' 
+                                                            ? `${accounts.length} contas configuradas • Toque em uma conta para ver o extrato`
+                                                            : `Filtrando por: ${selectedAccountObj?.name || 'Conta'}`}
+                                                    </span>
                                                 </div>
                                                 <button
                                                     onClick={() => setIsPlaidModalOpen(true)}
@@ -4122,23 +4168,38 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                 {accounts.map(acc => {
                                                     const currentBalance = accountBalances[acc.id] || 0;
                                                     const isNegativeCredit = acc.type === 'credito' && currentBalance < 0;
+                                                    const isSelected = selectedAccountId === acc.id;
 
                                                     return (
                                                         <div
                                                             key={acc.id}
-                                                            className={`rounded-3xl p-5 shadow-md bg-gradient-to-br ${acc.color} text-white relative overflow-hidden flex flex-col justify-between h-40 border border-white/10`}
+                                                            onClick={() => setSelectedAccountId(prev => prev === acc.id ? 'todos' : acc.id)}
+                                                            className={`rounded-3xl p-5 shadow-md bg-gradient-to-br ${acc.color} text-white relative overflow-hidden flex flex-col justify-between h-40 border transition-all cursor-pointer select-none active:scale-[0.98] ${
+                                                                isSelected 
+                                                                    ? 'ring-4 ring-blue-500 shadow-2xl scale-[1.02] border-white/40' 
+                                                                    : 'border-white/10 hover:border-white/30 hover:shadow-xl'
+                                                            }`}
                                                         >
                                                             <div className="absolute -right-4 -bottom-4 opacity-15 pointer-events-none">
                                                                 {acc.type === 'banco' ? <Landmark size={85} /> : acc.type === 'credito' ? <CreditCard size={85} /> : <Wallet size={85} />}
                                                             </div>
-                                                            <div>
-                                                                <p className="text-white/80 text-[11px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1.5">
-                                                                    {acc.type === 'banco' ? <Landmark size={13} /> : acc.type === 'credito' ? <CreditCard size={13} /> : <Wallet size={13} />}
-                                                                    {acc.name}
-                                                                </p>
-                                                                <h2 className="text-2xl font-black tracking-tight mt-1">
-                                                                    {formatCurrency(currentBalance)}
-                                                                </h2>
+
+                                                            <div className="flex justify-between items-start">
+                                                                <div>
+                                                                    <p className="text-white/80 text-[11px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                                                                        {acc.type === 'banco' ? <Landmark size={13} /> : acc.type === 'credito' ? <CreditCard size={13} /> : <Wallet size={13} />}
+                                                                        {acc.name}
+                                                                    </p>
+                                                                    <h2 className="text-2xl font-black tracking-tight mt-1">
+                                                                        {formatCurrency(currentBalance)}
+                                                                    </h2>
+                                                                </div>
+
+                                                                {isSelected && (
+                                                                    <span className="text-[10px] font-black bg-white text-slate-900 px-2 py-0.5 rounded-full shadow-sm flex items-center gap-1 animate-in fade-in">
+                                                                        ✓ Ativa
+                                                                    </span>
+                                                                )}
                                                             </div>
 
                                                             <div className="flex items-center justify-between z-10">
@@ -4146,13 +4207,21 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                                     {acc.type === 'credito' ? 'Fatura' : 'Saldo'}
                                                                 </span>
 
-                                                                {isNegativeCredit && (
+                                                                {isNegativeCredit ? (
                                                                     <button
-                                                                        onClick={() => { setInvoiceAccountToPay(acc); setIsPayInvoiceModalOpen(true); }}
+                                                                        onClick={(e) => { 
+                                                                            e.stopPropagation();
+                                                                            setInvoiceAccountToPay(acc); 
+                                                                            setIsPayInvoiceModalOpen(true); 
+                                                                        }}
                                                                         className="bg-white text-slate-900 hover:bg-slate-100 text-xs font-extrabold py-1 px-3 rounded-xl transition shadow flex items-center gap-1 active:scale-95"
                                                                     >
                                                                         <CheckCircle2 size={13} className="text-rose-500" /> Pagar Fatura
                                                                     </button>
+                                                                ) : (
+                                                                    <span className="text-[10px] text-white/70 font-medium">
+                                                                        {isSelected ? 'Toque p/ limpar filtro' : 'Toque p/ ver extrato →'}
+                                                                    </span>
                                                                 )}
                                                             </div>
                                                         </div>
@@ -4161,16 +4230,75 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                             </div>
                                         </div>
 
-                                        {/* Tabela / Lista de Lançamentos Recentes */}
+                                        {/* Tabela / Lista de Lançamentos Recentes (EXTRATO REPAGINADO) */}
                                         <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-100 dark:border-slate-800/80">
+                                            
+                                            {/* Spotlight / Detalhes da Conta Selecionada */}
+                                            {selectedAccountObj && selectedAccountStats && (
+                                                <div className="mb-5 p-4 sm:p-5 rounded-3xl bg-slate-900 text-white border border-slate-800 shadow-xl relative overflow-hidden animate-in fade-in">
+                                                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                                                        <div className="flex items-center gap-3.5">
+                                                            <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-white shrink-0 shadow-inner">
+                                                                {selectedAccountObj.type === 'banco' ? <Landmark size={24} /> : selectedAccountObj.type === 'credito' ? <CreditCard size={24} /> : <Wallet size={24} />}
+                                                            </div>
+                                                            <div>
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                                                                        {selectedAccountObj.type === 'banco' ? 'Conta Bancária' : selectedAccountObj.type === 'credito' ? 'Cartão de Crédito' : 'Carteira / Dinheiro'}
+                                                                    </span>
+                                                                    <span className="text-xs text-slate-400 font-bold">• {selectedAccountStats.count} {selectedAccountStats.count === 1 ? 'movimento' : 'movimentos'} no mês</span>
+                                                                </div>
+                                                                <h3 className="text-lg font-black text-white mt-0.5">{selectedAccountObj.name}</h3>
+                                                            </div>
+                                                        </div>
+
+                                                        <button
+                                                            onClick={() => setSelectedAccountId('todos')}
+                                                            className="text-xs font-bold text-slate-300 hover:text-white bg-white/10 hover:bg-white/20 px-3.5 py-2 rounded-2xl transition flex items-center gap-1.5"
+                                                        >
+                                                            <X size={14} /> Ver Todas as Contas
+                                                        </button>
+                                                    </div>
+
+                                                    {/* Mini KPIs da Conta no Mês */}
+                                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-4 pt-4 border-t border-white/10">
+                                                        <div className="bg-white/5 rounded-2xl p-2.5">
+                                                            <p className="text-[10px] uppercase font-bold text-slate-400">{selectedAccountObj.type === 'credito' ? 'Fatura Atual' : 'Saldo da Conta'}</p>
+                                                            <p className={`text-sm font-black ${selectedAccountStats.balance >= 0 ? 'text-white' : 'text-rose-400'}`}>
+                                                                {formatCurrency(selectedAccountStats.balance)}
+                                                            </p>
+                                                        </div>
+                                                        <div className="bg-white/5 rounded-2xl p-2.5">
+                                                            <p className="text-[10px] uppercase font-bold text-emerald-400">Entradas no Mês</p>
+                                                            <p className="text-sm font-black text-emerald-300">+{formatCurrency(selectedAccountStats.income)}</p>
+                                                        </div>
+                                                        <div className="bg-white/5 rounded-2xl p-2.5">
+                                                            <p className="text-[10px] uppercase font-bold text-rose-400">Saídas no Mês</p>
+                                                            <p className="text-sm font-black text-rose-300">-{formatCurrency(selectedAccountStats.expenses)}</p>
+                                                        </div>
+                                                        <div className="bg-white/5 rounded-2xl p-2.5">
+                                                            <p className="text-[10px] uppercase font-bold text-amber-400">Pendências</p>
+                                                            <p className="text-sm font-black text-amber-300">{formatCurrency(selectedAccountStats.pending)}</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+
                                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-5">
                                                 <div>
-                                                    <h3 className="text-base font-black text-slate-800 dark:text-white">Extrato de Movimentações</h3>
-                                                    <p className="text-xs text-slate-400 font-medium">Lançamentos registrados para o mês atual</p>
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <h3 className="text-base font-black text-slate-800 dark:text-white">Extrato de Movimentações</h3>
+                                                        <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                                                            {filteredAndSearchedTransactions.length} {filteredAndSearchedTransactions.length === 1 ? 'registro' : 'registros'}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-xs text-slate-400 font-medium mt-0.5">
+                                                        {selectedAccountObj ? `Exibindo extrato exclusivo de: ${selectedAccountObj.name}` : 'Lançamentos registrados para o mês atual'}
+                                                    </p>
                                                 </div>
                                                 <button
                                                     onClick={() => openNewForm('saida')}
-                                                    className="text-xs font-extrabold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/50 py-2 px-3 rounded-xl transition flex items-center gap-1.5"
+                                                    className="text-xs font-extrabold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/50 py-2 px-3.5 rounded-2xl transition flex items-center gap-1.5"
                                                 >
                                                     <Plus size={14} /> Novo Lançamento
                                                 </button>
@@ -4186,17 +4314,49 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                         type="text"
                                                         value={searchQuery}
                                                         onChange={(e) => setSearchQuery(e.target.value)}
-                                                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
-                                                        placeholder="Filtrar por descrição ou categoria..."
+                                                        className="w-full pl-10 pr-10 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
+                                                        placeholder="Filtrar por descrição, categoria ou conta..."
                                                     />
+                                                    {searchQuery && (
+                                                        <button 
+                                                            onClick={() => setSearchQuery('')}
+                                                            className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                                        >
+                                                            <X size={14} />
+                                                        </button>
+                                                    )}
                                                 </div>
 
+                                                {/* Seletor Rápido de Contas (Pills) */}
+                                                <div className="flex gap-1.5 overflow-x-auto scrollbar-hide pb-1">
+                                                    <button
+                                                        onClick={() => setSelectedAccountId('todos')}
+                                                        className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${selectedAccountId === 'todos' ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'}`}
+                                                    >
+                                                        🌟 Todas as Contas
+                                                    </button>
+                                                    {accounts.map(acc => (
+                                                        <button
+                                                            key={`filter-${acc.id}`}
+                                                            onClick={() => setSelectedAccountId(prev => prev === acc.id ? 'todos' : acc.id)}
+                                                            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                                                                selectedAccountId === acc.id
+                                                                    ? 'bg-blue-600 text-white shadow-sm'
+                                                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                                            }`}
+                                                        >
+                                                            {acc.type === 'banco' ? '🏛️' : acc.type === 'credito' ? '💳' : '💵'} {acc.name}
+                                                        </button>
+                                                    ))}
+                                                </div>
+
+                                                {/* Seletor de Tipo (Receitas, Despesas, etc.) */}
                                                 <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
                                                     <button
                                                         onClick={() => setFilterType('todos')}
                                                         className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${filterType === 'todos' ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 shadow-sm' : 'bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'}`}
                                                     >
-                                                        Todos ({monthlyTransactions.length})
+                                                        Todos
                                                     </button>
                                                     <button
                                                         onClick={() => setFilterType('entrada')}
@@ -4230,12 +4390,21 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                 {filteredAndSearchedTransactions.length === 0 ? (
                                                     <div className="text-center py-12 bg-slate-50 dark:bg-slate-950 rounded-3xl border border-slate-200 dark:border-slate-800 border-dashed">
                                                         <p className="text-sm text-slate-400 font-medium">Nenhum registro encontrado para este filtro.</p>
+                                                        {selectedAccountId !== 'todos' && (
+                                                            <button
+                                                                onClick={() => setSelectedAccountId('todos')}
+                                                                className="mt-2 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline"
+                                                            >
+                                                                Limpar filtro de conta
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 ) : (
                                                     filteredAndSearchedTransactions.map((transaction) => {
                                                         const isIncome = transaction.type === 'entrada';
                                                         const isInvest = transaction.type === 'investimento';
                                                         const isTransfer = transaction.type === 'transferencia';
+                                                        const isFixedLinked = transaction.isFromRepeatRule || repeatingRules.some(r => r.description?.toLowerCase().trim() === transaction.description?.toLowerCase().trim());
 
                                                         return (
                                                             <div
@@ -4244,7 +4413,7 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                             >
                                                                 <div className="flex items-center gap-3 min-w-0">
                                                                     <div
-                                                                        className="p-3 rounded-2xl shrink-0"
+                                                                        className="p-3 rounded-2xl shrink-0 shadow-sm"
                                                                         style={{
                                                                             backgroundColor: `${allCategoryColors[transaction.category] || '#3b82f6'}20`,
                                                                             color: allCategoryColors[transaction.category] || '#3b82f6'
@@ -4253,15 +4422,24 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                                         {getCategoryIcon(transaction.category)}
                                                                     </div>
                                                                     <div className="min-w-0">
-                                                                        <h4 className="font-extrabold text-slate-800 dark:text-white text-xs sm:text-sm truncate">
-                                                                            {transaction.description}
-                                                                        </h4>
+                                                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                                                            <h4 className="font-extrabold text-slate-800 dark:text-white text-xs sm:text-sm truncate">
+                                                                                {transaction.description}
+                                                                            </h4>
+                                                                            {isFixedLinked && (
+                                                                                <span className="text-[9px] bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 px-1.5 py-0.2 rounded font-black uppercase tracking-wider">
+                                                                                    Conta Fixa
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
                                                                         <div className="flex flex-wrap items-center gap-1.5 text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                                                                             <span className="font-semibold bg-white dark:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-200/50 dark:border-slate-700">
                                                                                 {transaction.category}
                                                                             </span>
                                                                             <span>•</span>
-                                                                            <span>{accounts.find(a => a.id === transaction.accountId)?.name || 'Conta'}</span>
+                                                                            <span className="font-medium text-slate-600 dark:text-slate-300">
+                                                                                {accounts.find(a => a.id === transaction.accountId)?.name || 'Conta'}
+                                                                            </span>
                                                                             <span>•</span>
                                                                             <span>{new Date(transaction.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}</span>
                                                                             {transaction.paidBy && transaction.paidBy !== 'conjunto' && (
