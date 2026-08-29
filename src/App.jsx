@@ -6378,18 +6378,19 @@ Responda ESTRITAMENTE um objeto JSON no formato:
 
                                                 {formData.repeatDurationMode === 'fixed' && (
                                                     <div className="pt-2">
-                                                        <span className="text-[10px] font-bold text-slate-400 block mb-1">Duração:</span>
-                                                        <div className="grid grid-cols-4 gap-1.5">
-                                                            {['3', '4', '6', '12'].map(m => (
-                                                                <button
-                                                                    key={m}
-                                                                    type="button"
-                                                                    onClick={() => setFormData(prev => ({ ...prev, repeatDurationMonths: m }))}
-                                                                    className={`py-1.5 rounded-lg text-xs font-black transition ${formData.repeatDurationMonths === m ? 'bg-amber-500 text-white shadow' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'}`}
-                                                                >
-                                                                    {m} meses
-                                                                </button>
-                                                            ))}
+                                                        <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Duração do Contrato (em Meses):</label>
+                                                        <div className="relative flex items-center">
+                                                            <input
+                                                                type="number"
+                                                                min="1"
+                                                                max="120"
+                                                                required
+                                                                placeholder="Digite a quantidade (ex: 1, 5, 7...)"
+                                                                value={formData.repeatDurationMonths}
+                                                                onChange={e => setFormData(prev => ({ ...prev, repeatDurationMonths: e.target.value }))}
+                                                                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs font-black text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                                            />
+                                                            <span className="absolute right-3 text-xs font-bold text-slate-400 pointer-events-none">meses</span>
                                                         </div>
                                                     </div>
                                                 )}
@@ -8941,17 +8942,18 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                 </div>
                                                 <div>
                                                     <label className="text-[10px] font-black uppercase text-amber-800 dark:text-amber-300 block mb-1">Duração (Meses)</label>
-                                                    <div className="flex gap-1">
-                                                        {['3', '4', '6', '12'].map(m => (
-                                                            <button
-                                                                key={m}
-                                                                type="button"
-                                                                onClick={() => setFixedBillForm(prev => ({ ...prev, durationMonths: m }))}
-                                                                className={`flex-1 py-2 rounded-xl text-xs font-black transition ${fixedBillForm.durationMonths === m ? 'bg-amber-500 text-white shadow' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-amber-200 dark:border-amber-800'}`}
-                                                            >
-                                                                {m}m
-                                                            </button>
-                                                        ))}
+                                                    <div className="relative flex items-center">
+                                                        <input
+                                                            type="number"
+                                                            min="1"
+                                                            max="120"
+                                                            required
+                                                            placeholder="Ex: 1, 4, 5, 7..."
+                                                            value={fixedBillForm.durationMonths}
+                                                            onChange={e => setFixedBillForm(prev => ({ ...prev, durationMonths: e.target.value }))}
+                                                            className="w-full bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800 rounded-xl px-3 py-2 text-xs font-black text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                                        />
+                                                        <span className="absolute right-2.5 text-[11px] font-bold text-slate-400 pointer-events-none">meses</span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -9033,18 +9035,19 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                 </div>
 
                                 <div>
-                                    <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Prorrogar por mais:</label>
-                                    <div className="grid grid-cols-4 gap-2">
-                                        {['3', '4', '6', '12'].map(m => (
-                                            <button
-                                                key={m}
-                                                type="button"
-                                                onClick={() => setRenewFormData(prev => ({ ...prev, extendMonths: m }))}
-                                                className={`py-2.5 rounded-2xl text-xs font-black transition ${renewFormData.extendMonths === m ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}
-                                            >
-                                                +{m} meses
-                                            </button>
-                                        ))}
+                                    <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Prorrogar por mais (Meses):</label>
+                                    <div className="relative flex items-center">
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="120"
+                                            required
+                                            placeholder="Digite a quantidade (ex: 1, 4, 5, 7...)"
+                                            value={renewFormData.extendMonths}
+                                            onChange={e => setRenewFormData(prev => ({ ...prev, extendMonths: e.target.value }))}
+                                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-sm font-bold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                        <span className="absolute right-4 text-xs font-bold text-slate-400 pointer-events-none">meses</span>
                                     </div>
                                 </div>
 
