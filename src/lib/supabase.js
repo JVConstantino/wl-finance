@@ -297,7 +297,11 @@ export const fetchAllUserData = async () => {
         category: r.category,
         description: r.description || '',
         day: Number(r.day),
-        accountId: r.account_id || 'acc_main'
+        accountId: r.account_id || 'acc_main',
+        paidBy: r.paid_by || 'conjunto',
+        durationMonths: r.duration_months ? Number(r.duration_months) : null,
+        startDate: r.start_date || undefined,
+        endDate: r.end_date || undefined
     }));
 
     const formattedGoals = (goals || []).reduce((acc, curr) => {
@@ -411,7 +415,11 @@ export const syncUpsertRule = async (rule, userId, familyId) => {
         category: rule.category,
         description: rule.description || '',
         day: Number(rule.day),
-        account_id: rule.accountId || 'acc_main'
+        account_id: rule.accountId || 'acc_main',
+        paid_by: rule.paidBy || 'conjunto',
+        duration_months: rule.durationMonths ? Number(rule.durationMonths) : null,
+        start_date: rule.startDate || null,
+        end_date: rule.endDate || null
     };
 
     const { error } = await supabase.from('repeating_rules').upsert(payload);

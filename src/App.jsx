@@ -255,8 +255,33 @@ export default function App() {
         description: '',
         status: 'pago',
         isRepeating: false,
+        repeatDurationMode: 'indefinite', // 'indefinite' | 'fixed'
+        repeatDurationMonths: '4',
         accountId: 'acc_main',
         paidBy: 'conjunto' // 'marido' | 'esposa' | 'conjunto'
+    });
+
+    // 5.5 Estados para Gestão de Contas Fixas & Contratos com Vigência
+    const [isFixedBillsModalOpen, setIsFixedBillsModalOpen] = useState(false);
+    const [fixedBillEditing, setFixedBillEditing] = useState(null);
+    const [fixedBillForm, setFixedBillForm] = useState({
+        id: '',
+        type: 'saida',
+        amount: '',
+        category: 'Casa',
+        description: '',
+        day: '1',
+        accountId: 'acc_main',
+        paidBy: 'conjunto',
+        durationMode: 'indefinite', // 'indefinite' | 'fixed'
+        durationMonths: '4',
+        startMonth: new Date().toISOString().slice(0, 7) // 'YYYY-MM'
+    });
+    const [isRenewModalOpen, setIsRenewModalOpen] = useState(false);
+    const [renewingBill, setRenewingBill] = useState(null);
+    const [renewFormData, setRenewFormData] = useState({
+        newAmount: '',
+        extendMonths: '4'
     });
 
     // 6. Estados do Supabase (Nuvem & Auth)
@@ -2775,23 +2800,112 @@ Responda ESTRITAMENTE um objeto JSON no formato:
         });
     };
 
+    // Função para calcular vigência, meses restantes e status de contas fixas / contratos
+    const getRuleValidity = (rule) => {
+        if (!rule.durationMonths || Number(rule.durationMonths) <= 0 || !rule.startDate) {
+            return {
+                isIndefinite: true,
+                text: 'Recorrência Contínua (Sem data final)',
+                shortText: 'Indeterminado',
+                remainingMonths: null,
+                isExpired: false,
+                isExpiringSoon: false,
+                progressPercent: 100
+            };
+        }
+
+        const [sYear, sMonth] = rule.startDate.split('-').map(Number);
+        const dur = Number(rule.durationMonths);
+        
+        // Data final
+        const endMonthIndex = (sMonth - 1) + dur - 1;
+        const endYear = sYear + Math.floor(endMonthIndex / 12);
+        const endMonthNormalized = (endMonthIndex % 12) + 1;
+        const endDateObj = new Date(endYear, endMonthNormalized - 1, 1);
+        const endMonthStr = endDateObj.toLocaleString('pt-BR', { month: 'short', year: 'numeric' });
+
+        // Mês atual
+        const now = new Date();
+        const curYear = now.getFullYear();
+        const curMonth = now.getMonth() + 1;
+
+        const elapsedMonths = (curYear - sYear) * 12 + (curMonth - sMonth);
+        const remainingMonths = dur - elapsedMonths;
+
+        const progressPercent = Math.min(100, Math.max(0, Math.round(((elapsedMonths + 1) / dur) * 100)));
+
+        if (remainingMonths <= 0) {
+            return {
+                isIndefinite: false,
+                text: `Expirou em ${endMonthStr}`,
+                shortText: 'Expirado',
+                remainingMonths: 0,
+                isExpired: true,
+                isExpiringSoon: false,
+                endMonthStr,
+                progressPercent: 100
+            };
+        } else if (remainingMonths === 1) {
+            return {
+                isIndefinite: false,
+                text: `Vence neste mês (${endMonthStr})!`,
+                shortText: 'Vence este mês',
+                remainingMonths: 1,
+                isExpired: false,
+                isExpiringSoon: true,
+                endMonthStr,
+                progressPercent
+            };
+        } else {
+            return {
+                isIndefinite: false,
+                text: `Restam ${remainingMonths} meses (Até ${endMonthStr})`,
+                shortText: `${remainingMonths} meses rest.`,
+                remainingMonths,
+                isExpired: false,
+                isExpiringSoon: false,
+                endMonthStr,
+                progressPercent
+            };
+        }
+    };
+
     const assinaturasAtivas = repeatingRules.filter(r => r.type === 'saida');
     const gastoMensalAssinaturas = assinaturasAtivas.reduce((acc, r) => acc + (r.amount || 0), 0);
     const gastoAnualAssinaturas = gastoMensalAssinaturas * 12;
 
     const futureProjectionData = useMemo(() => {
         const currentTotalBalance = Object.values(accountBalances).reduce((a, b) => a + b, 0);
-        const ganhoMensalBase = repeatingRules.filter(r => r.type === 'entrada').reduce((a, b) => a + (b.amount || 0), 0) || totals.receitas;
-        const gastoMensalBase = repeatingRules.filter(r => r.type === 'saida').reduce((a, b) => a + (b.amount || 0), 0) || totals.despesas;
-        const netMensal = ganhoMensalBase - gastoMensalBase;
+        let cumulativeBalance = currentTotalBalance;
 
         return Array.from({ length: 6 }).map((_, i) => {
             const date = new Date(currentDate.getFullYear(), currentDate.getMonth() + i + 1, 1);
-            const projBalance = currentTotalBalance + (netMensal * (i + 1));
+            const projYear = date.getFullYear();
+            const projMonth = date.getMonth() + 1; // 1-12
+
+            const ganhoMensal = repeatingRules.filter(r => {
+                if (r.type !== 'entrada') return false;
+                if (!r.durationMonths || Number(r.durationMonths) <= 0 || !r.startDate) return true;
+                const [sY, sM] = r.startDate.split('-').map(Number);
+                const diff = (projYear - sY) * 12 + (projMonth - sM);
+                return diff >= 0 && diff < Number(r.durationMonths);
+            }).reduce((a, b) => a + (b.amount || 0), 0) || totals.receitas;
+
+            const gastoMensal = repeatingRules.filter(r => {
+                if (r.type !== 'saida') return false;
+                if (!r.durationMonths || Number(r.durationMonths) <= 0 || !r.startDate) return true;
+                const [sY, sM] = r.startDate.split('-').map(Number);
+                const diff = (projYear - sY) * 12 + (projMonth - sM);
+                return diff >= 0 && diff < Number(r.durationMonths);
+            }).reduce((a, b) => a + (b.amount || 0), 0) || totals.despesas;
+
+            const netMensal = ganhoMensal - gastoMensal;
+            cumulativeBalance += netMensal;
+
             return {
                 month: date.toLocaleString('pt-BR', { month: 'short' }).replace('.', ''),
-                balance: projBalance,
-                isNegative: projBalance < 0
+                balance: cumulativeBalance,
+                isNegative: cumulativeBalance < 0
             };
         });
     }, [accountBalances, repeatingRules, totals, currentDate]);
@@ -2863,6 +2977,87 @@ Responda ESTRITAMENTE um objeto JSON no formato:
         }
     };
 
+    const handleSaveFixedBill = (e) => {
+        e.preventDefault();
+        const amt = parseFloat(fixedBillForm.amount);
+        if (isNaN(amt) || amt <= 0 || !fixedBillForm.description.trim()) {
+            showToast('Informe um valor válido e uma descrição.');
+            return;
+        }
+
+        const isFixed = fixedBillForm.durationMode === 'fixed';
+        const durMonths = isFixed ? (parseInt(fixedBillForm.durationMonths, 10) || 4) : null;
+        const startMonthStr = fixedBillForm.startMonth || new Date().toISOString().slice(0, 7);
+        const startDate = `${startMonthStr}-01`;
+
+        let endDate = null;
+        if (isFixed && durMonths) {
+            const [sYear, sMonth] = startMonthStr.split('-').map(Number);
+            const endMonthIndex = (sMonth - 1) + durMonths - 1;
+            const endYear = sYear + Math.floor(endMonthIndex / 12);
+            const endMonthNorm = (endMonthIndex % 12) + 1;
+            const padMonth = String(endMonthNorm).padStart(2, '0');
+            endDate = `${endYear}-${padMonth}-01`;
+        }
+
+        const ruleId = fixedBillForm.id || ('rule_' + Date.now().toString());
+        const ruleData = {
+            id: ruleId,
+            type: fixedBillForm.type,
+            amount: amt,
+            category: fixedBillForm.category,
+            description: fixedBillForm.description.trim(),
+            day: parseInt(fixedBillForm.day, 10) || 1,
+            accountId: fixedBillForm.accountId || 'acc_main',
+            paidBy: fixedBillForm.paidBy || 'conjunto',
+            durationMonths: durMonths,
+            startDate: startDate,
+            endDate: endDate
+        };
+
+        saveRule(ruleData);
+        setIsFixedBillsModalOpen(false);
+        setFixedBillEditing(null);
+        showToast(fixedBillForm.id ? 'Conta fixa atualizada!' : 'Conta fixa cadastrada com sucesso!');
+    };
+
+    const handleRenewFixedBill = (e) => {
+        e.preventDefault();
+        if (!renewingBill) return;
+
+        const newAmt = parseFloat(renewFormData.newAmount);
+        const extendMonths = parseInt(renewFormData.extendMonths, 10) || 4;
+
+        if (isNaN(newAmt) || newAmt <= 0) {
+            showToast('Informe o valor da renovação.');
+            return;
+        }
+
+        const now = new Date();
+        const startMonthStr = now.toISOString().slice(0, 7);
+        const startDate = `${startMonthStr}-01`;
+
+        const [sYear, sMonth] = startMonthStr.split('-').map(Number);
+        const endMonthIndex = (sMonth - 1) + extendMonths - 1;
+        const endYear = sYear + Math.floor(endMonthIndex / 12);
+        const endMonthNorm = (endMonthIndex % 12) + 1;
+        const padMonth = String(endMonthNorm).padStart(2, '0');
+        const endDate = `${endYear}-${padMonth}-01`;
+
+        const updatedRule = {
+            ...renewingBill,
+            amount: newAmt,
+            durationMonths: extendMonths,
+            startDate: startDate,
+            endDate: endDate
+        };
+
+        saveRule(updatedRule);
+        setIsRenewModalOpen(false);
+        setRenewingBill(null);
+        showToast(`🎉 Contrato de ${renewingBill.description} renovado por mais ${extendMonths} meses!`);
+    };
+
     const handleSubmit = (e) => {
         e.preventDefault();
         const amt = parseFloat(formData.amount);
@@ -2902,6 +3097,20 @@ Responda ESTRITAMENTE um objeto JSON no formato:
             saveTransaction(newT);
 
             if (formData.isRepeating) {
+                const isFixed = formData.repeatDurationMode === 'fixed';
+                const durMonths = isFixed ? (parseInt(formData.repeatDurationMonths, 10) || 4) : null;
+                const startMonthStr = formData.date.slice(0, 7);
+                const startDate = `${startMonthStr}-01`;
+                let endDate = null;
+                if (isFixed && durMonths) {
+                    const [sYear, sMonth] = startMonthStr.split('-').map(Number);
+                    const endMonthIndex = (sMonth - 1) + durMonths - 1;
+                    const endYear = sYear + Math.floor(endMonthIndex / 12);
+                    const endMonthNorm = (endMonthIndex % 12) + 1;
+                    const padMonth = String(endMonthNorm).padStart(2, '0');
+                    endDate = `${endYear}-${padMonth}-01`;
+                }
+
                 const newRule = {
                     id: 'rule_' + Date.now().toString(),
                     type: formData.type,
@@ -2909,7 +3118,11 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                     category: formData.category,
                     description: formData.description.trim(),
                     day: new Date(formData.date + 'T12:00:00').getDate(),
-                    accountId: formData.accountId
+                    accountId: formData.accountId,
+                    paidBy: formData.paidBy || 'conjunto',
+                    durationMonths: durMonths,
+                    startDate: startDate,
+                    endDate: endDate
                 };
                 saveRule(newRule);
             }
@@ -2984,6 +3197,8 @@ Responda ESTRITAMENTE um objeto JSON no formato:
             description: '',
             status: 'pago',
             isRepeating: false,
+            repeatDurationMode: 'indefinite',
+            repeatDurationMonths: '4',
             accountId: 'acc_main',
             paidBy: 'conjunto'
         });
@@ -3198,6 +3413,32 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                         {/* Ferramentas e Configurações */}
                         <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800 space-y-1">
                             <p className="text-[11px] font-black text-slate-400 uppercase tracking-wider px-4 mb-2">Preferências</p>
+
+                            <button
+                                onClick={() => {
+                                    setFixedBillEditing(null);
+                                    setFixedBillForm({
+                                        id: '',
+                                        type: 'saida',
+                                        amount: '',
+                                        category: 'Casa',
+                                        description: '',
+                                        day: '1',
+                                        accountId: 'acc_main',
+                                        paidBy: 'conjunto',
+                                        durationMode: 'indefinite',
+                                        durationMonths: '4',
+                                        startMonth: new Date().toISOString().slice(0, 7)
+                                    });
+                                    setIsFixedBillsModalOpen(true);
+                                }}
+                                className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <Clock size={16} className="text-amber-500" /> Contas Fixas & Contratos
+                                </div>
+                                {repeatingRules.length > 0 && <span className="text-[10px] bg-amber-100 dark:bg-amber-950/60 text-amber-600 px-2 py-0.5 rounded-full font-extrabold">{repeatingRules.length}</span>}
+                            </button>
 
                             <button
                                 onClick={() => setIsCategoryManagerOpen(true)}
@@ -3601,6 +3842,36 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                         className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
                                     >
                                         <PiggyBank size={16} className="text-amber-500" /> Cofrinhos & Sonhos
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setShowProfileMenu(false);
+                                            setFixedBillEditing(null);
+                                            setFixedBillForm({
+                                                id: '',
+                                                type: 'saida',
+                                                amount: '',
+                                                category: 'Casa',
+                                                description: '',
+                                                day: '1',
+                                                accountId: 'acc_main',
+                                                paidBy: 'conjunto',
+                                                durationMode: 'indefinite',
+                                                durationMonths: '4',
+                                                startMonth: new Date().toISOString().slice(0, 7)
+                                            });
+                                            setIsFixedBillsModalOpen(true);
+                                        }}
+                                        className="w-full flex items-center justify-between px-3 py-2 text-xs font-bold rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <Clock size={16} className="text-amber-500" /> Contas Fixas & Contratos
+                                        </span>
+                                        {repeatingRules.length > 0 && (
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded font-extrabold bg-amber-100 dark:bg-amber-950 text-amber-600">
+                                                {repeatingRules.length}
+                                            </span>
+                                        )}
                                     </button>
                                     <button
                                         onClick={() => { setShowProfileMenu(false); setIsCategoryManagerOpen(true); }}
@@ -4395,48 +4666,239 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                 )}
 
                                 {analysisView === 'assinaturas' && (
-                                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                                        <div className="lg:col-span-5 bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-800 text-center flex flex-col justify-center">
-                                            <h2 className="text-slate-400 font-bold uppercase tracking-wider text-xs mb-2">Custo Anual de Contas Recorrentes</h2>
-                                            <h2 className="text-3xl font-black text-rose-500 mb-2">{formatCurrency(gastoAnualAssinaturas)}</h2>
-                                            <p className="text-xs text-slate-400">Total de {formatCurrency(gastoMensalAssinaturas)} saindo automaticamente todo mês.</p>
+                                    <div className="space-y-6">
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-800">
+                                                <span className="text-[11px] font-black uppercase text-slate-400 block mb-1">Gasto Mensal Fixo</span>
+                                                <h3 className="text-2xl font-black text-rose-500">{formatCurrency(gastoMensalAssinaturas)}</h3>
+                                                <p className="text-xs text-slate-400 mt-1">Saindo todo mês de forma automática</p>
+                                            </div>
+                                            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-800">
+                                                <span className="text-[11px] font-black uppercase text-slate-400 block mb-1">Custo Anual Projetado</span>
+                                                <h3 className="text-2xl font-black text-slate-800 dark:text-white">{formatCurrency(gastoAnualAssinaturas)}</h3>
+                                                <p className="text-xs text-slate-400 mt-1">Impacto anual no orçamento familiar</p>
+                                            </div>
+                                            <div className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-3xl p-6 shadow-lg text-white flex flex-col justify-between">
+                                                <div>
+                                                    <span className="text-[11px] font-black uppercase text-amber-200 block mb-1">Contas & Contratos</span>
+                                                    <h3 className="text-2xl font-black">{repeatingRules.length} cadastradas</h3>
+                                                </div>
+                                                <button
+                                                    onClick={() => {
+                                                        setFixedBillEditing(null);
+                                                        setFixedBillForm({
+                                                            id: '',
+                                                            type: 'saida',
+                                                            amount: '',
+                                                            category: 'Casa',
+                                                            description: '',
+                                                            day: '1',
+                                                            accountId: 'acc_main',
+                                                            paidBy: 'conjunto',
+                                                            durationMode: 'indefinite',
+                                                            durationMonths: '4',
+                                                            startMonth: new Date().toISOString().slice(0, 7)
+                                                        });
+                                                        setIsFixedBillsModalOpen(true);
+                                                    }}
+                                                    className="mt-3 w-full bg-white text-slate-900 hover:bg-amber-50 font-black py-2.5 px-4 rounded-xl text-xs transition shadow-sm flex items-center justify-center gap-1.5"
+                                                >
+                                                    <Plus size={14} /> Nova Conta / Contrato
+                                                </button>
+                                            </div>
                                         </div>
 
-                                        <div className="lg:col-span-7 bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-800">
-                                            <div className="flex justify-between items-center mb-4">
-                                                <h3 className="text-base font-black text-slate-800 dark:text-white">Assinaturas Ativas</h3>
+                                        <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-800">
+                                            <div className="flex justify-between items-center mb-6">
+                                                <div>
+                                                    <h3 className="text-base font-black text-slate-800 dark:text-white">Contas Fixas & Contratos com Vigência</h3>
+                                                    <p className="text-xs text-slate-400">Gerencie aluguéis, seguros com tempo determinado e assinaturas</p>
+                                                </div>
                                                 <button
-                                                    onClick={() => { openNewForm('saida'); setFormData(prev => ({ ...prev, isRepeating: true })); }}
-                                                    className="text-xs font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1 hover:underline"
+                                                    onClick={() => {
+                                                        setFixedBillEditing(null);
+                                                        setFixedBillForm({
+                                                            id: '',
+                                                            type: 'saida',
+                                                            amount: '',
+                                                            category: 'Casa',
+                                                            description: '',
+                                                            day: '1',
+                                                            accountId: 'acc_main',
+                                                            paidBy: 'conjunto',
+                                                            durationMode: 'indefinite',
+                                                            durationMonths: '4',
+                                                            startMonth: new Date().toISOString().slice(0, 7)
+                                                        });
+                                                        setIsFixedBillsModalOpen(true);
+                                                    }}
+                                                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center gap-1.5"
                                                 >
-                                                    <Plus size={14} /> Nova Assinatura
+                                                    <Plus size={14} /> Adicionar
                                                 </button>
                                             </div>
 
-                                            <div className="space-y-3">
-                                                {assinaturasAtivas.map(r => (
-                                                    <div key={r.id} className="p-3.5 bg-slate-50 dark:bg-slate-950 rounded-2xl flex justify-between items-center">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="p-2.5 bg-white dark:bg-slate-800 rounded-xl text-slate-500">
-                                                                {getCategoryIcon(r.category)}
-                                                            </div>
-                                                            <div>
-                                                                <p className="font-extrabold text-slate-800 dark:text-white text-sm">{r.description}</p>
-                                                                <p className="text-[11px] text-slate-400">Cobrança todo dia {r.day}</p>
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex items-center gap-3">
-                                                            <p className="font-black text-rose-500 text-sm">-{formatCurrency(r.amount)}</p>
-                                                            <button
-                                                                onClick={() => { deleteRule(r.id); showToast("Assinatura removida!"); }}
-                                                                className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg transition"
+                                            {repeatingRules.length === 0 ? (
+                                                <div className="text-center py-12 px-4 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
+                                                    <Clock size={40} className="mx-auto text-slate-300 dark:text-slate-700 mb-3" />
+                                                    <p className="font-extrabold text-sm text-slate-700 dark:text-slate-300">Nenhuma conta fixa ou contrato cadastrado</p>
+                                                    <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1 mb-4">Cadastre seu aluguel contínuo, seguro do carro com vigência de 4 meses ou assinaturas de serviços.</p>
+                                                    <button
+                                                        onClick={() => {
+                                                            setFixedBillEditing(null);
+                                                            setFixedBillForm({
+                                                                id: '',
+                                                                type: 'saida',
+                                                                amount: '',
+                                                                category: 'Casa',
+                                                                description: '',
+                                                                day: '1',
+                                                                accountId: 'acc_main',
+                                                                paidBy: 'conjunto',
+                                                                durationMode: 'indefinite',
+                                                                durationMonths: '4',
+                                                                startMonth: new Date().toISOString().slice(0, 7)
+                                                            });
+                                                            setIsFixedBillsModalOpen(true);
+                                                        }}
+                                                        className="px-4 py-2 bg-blue-600 text-white font-bold text-xs rounded-xl hover:bg-blue-700 transition"
+                                                    >
+                                                        Cadastrar Primeira Conta Fixa
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    {repeatingRules.map(r => {
+                                                        const validity = getRuleValidity(r);
+                                                        const isExpiring = validity.isExpiringSoon;
+                                                        const isExpired = validity.isExpired;
+
+                                                        return (
+                                                            <div
+                                                                key={r.id}
+                                                                className={`p-5 rounded-2xl border transition-all ${
+                                                                    isExpiring
+                                                                        ? 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-300 dark:border-amber-800/60 ring-2 ring-amber-400/20'
+                                                                        : isExpired
+                                                                        ? 'bg-slate-50 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 opacity-75'
+                                                                        : 'bg-white dark:bg-slate-950 border-slate-100 dark:border-slate-800 shadow-sm'
+                                                                }`}
                                                             >
-                                                                <Trash2 size={16} />
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
+                                                                <div className="flex justify-between items-start mb-3">
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-2xl text-slate-600 dark:text-slate-300">
+                                                                            {getCategoryIcon(r.category)}
+                                                                        </div>
+                                                                        <div>
+                                                                            <h4 className="font-extrabold text-slate-800 dark:text-white text-sm">{r.description}</h4>
+                                                                            <span className="text-[11px] text-slate-400 font-medium">Vence todo dia {r.day} • {r.category}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="text-right">
+                                                                        <p className={`font-black text-base ${r.type === 'entrada' ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                                            {r.type === 'entrada' ? '+' : '-'}{formatCurrency(r.amount)}
+                                                                        </p>
+                                                                        <span className="text-[10px] uppercase font-bold text-slate-400">
+                                                                            {r.paidBy === 'marido' ? '👦 Marido' : (r.paidBy === 'esposa' ? '👧 Esposa' : '👥 Casal')}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Status de Vigência / Duração */}
+                                                                <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl mb-4 text-xs">
+                                                                    <div className="flex justify-between items-center mb-1.5">
+                                                                        <span className="font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+                                                                            {validity.isIndefinite ? (
+                                                                                <><span>♾️</span> <span>Recorrência Contínua</span></>
+                                                                            ) : isExpiring ? (
+                                                                                <><span className="text-amber-500 animate-pulse">⚠️</span> <span className="text-amber-600 dark:text-amber-400 font-extrabold">{validity.text}</span></>
+                                                                            ) : isExpired ? (
+                                                                                <><span className="text-rose-500">🛑</span> <span className="text-rose-500 font-extrabold">{validity.text}</span></>
+                                                                            ) : (
+                                                                                <><span>⏳</span> <span className="text-blue-600 dark:text-blue-400 font-extrabold">{validity.text}</span></>
+                                                                            )}
+                                                                        </span>
+                                                                        {!validity.isIndefinite && (
+                                                                            <span className="text-[10px] font-mono text-slate-400">{r.durationMonths} meses total</span>
+                                                                        )}
+                                                                    </div>
+                                                                    {!validity.isIndefinite && (
+                                                                        <div className="w-full bg-slate-200 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                                                                            <div
+                                                                                className={`h-full rounded-full transition-all duration-500 ${isExpiring ? 'bg-amber-500' : isExpired ? 'bg-rose-500' : 'bg-blue-600'}`}
+                                                                                style={{ width: `${validity.progressPercent}%` }}
+                                                                            />
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+
+                                                                {/* Ações: Renovar, Editar, Excluir */}
+                                                                <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800/80">
+                                                                    {!validity.isIndefinite ? (
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                setRenewingBill(r);
+                                                                                setRenewFormData({
+                                                                                    newAmount: r.amount.toString(),
+                                                                                    extendMonths: (r.durationMonths || 4).toString()
+                                                                                });
+                                                                                setIsRenewModalOpen(true);
+                                                                            }}
+                                                                            className={`px-3 py-1.5 rounded-xl font-bold text-xs transition flex items-center gap-1.5 ${
+                                                                                isExpiring || isExpired
+                                                                                    ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-md'
+                                                                                    : 'bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900 text-blue-600 dark:text-blue-400'
+                                                                            }`}
+                                                                        >
+                                                                            <RotateCcw size={13} /> Renovar Contrato
+                                                                        </button>
+                                                                    ) : (
+                                                                        <span className="text-[11px] text-slate-400 font-medium">Sem data de expiração</span>
+                                                                    )}
+
+                                                                    <div className="flex items-center gap-1">
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                setFixedBillEditing(r.id);
+                                                                                setFixedBillForm({
+                                                                                    id: r.id,
+                                                                                    type: r.type,
+                                                                                    amount: r.amount.toString(),
+                                                                                    category: r.category,
+                                                                                    description: r.description,
+                                                                                    day: (r.day || 1).toString(),
+                                                                                    accountId: r.accountId || 'acc_main',
+                                                                                    paidBy: r.paidBy || 'conjunto',
+                                                                                    durationMode: r.durationMonths ? 'fixed' : 'indefinite',
+                                                                                    durationMonths: (r.durationMonths || 4).toString(),
+                                                                                    startMonth: r.startDate ? r.startDate.slice(0, 7) : new Date().toISOString().slice(0, 7)
+                                                                                });
+                                                                                setIsFixedBillsModalOpen(true);
+                                                                            }}
+                                                                            className="p-2 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg transition"
+                                                                            title="Editar"
+                                                                        >
+                                                                            <Edit2 size={15} />
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                if (window.confirm(`Deseja remover a conta fixa "${r.description}"?`)) {
+                                                                                    deleteRule(r.id);
+                                                                                    showToast("Conta fixa removida com sucesso!");
+                                                                                }
+                                                                            }}
+                                                                            className="p-2 text-slate-400 hover:text-rose-500 rounded-lg transition"
+                                                                            title="Excluir"
+                                                                        >
+                                                                            <Trash2 size={15} />
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 )}
@@ -5460,6 +5922,18 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                             const dayTxs = monthlyTransactions.filter(t => new Date(t.date + 'T12:00:00').getDate() === day && t.type !== 'transferencia');
                                             const hasDespesa = dayTxs.some(t => t.type === 'saida');
                                             const hasReceita = dayTxs.some(t => t.type === 'entrada');
+
+                                            const activeRulesOnDay = repeatingRules.filter(r => {
+                                                if (Number(r.day) !== day) return false;
+                                                if (!r.durationMonths || Number(r.durationMonths) <= 0 || !r.startDate) return true;
+                                                const [sY, sM] = r.startDate.split('-').map(Number);
+                                                const currY = currentDate.getFullYear();
+                                                const currM = currentDate.getMonth() + 1;
+                                                const diff = (currY - sY) * 12 + (currM - sM);
+                                                return diff >= 0 && diff < Number(r.durationMonths);
+                                            });
+                                            const hasFixedRule = activeRulesOnDay.length > 0;
+
                                             const isSelected = selectedDay === day;
 
                                             return (
@@ -5472,6 +5946,7 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                     <div className="flex gap-0.5 absolute bottom-1.5">
                                                         {hasReceita && <div className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-emerald-500'}`}></div>}
                                                         {hasDespesa && <div className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-rose-500'}`}></div>}
+                                                        {hasFixedRule && <div className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-amber-400'}`}></div>}
                                                     </div>
                                                 </button>
                                             );
@@ -5480,29 +5955,99 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                 </div>
 
                                 <div className="lg:col-span-5 bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-800">
-                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4">
-                                        Lançamentos do Dia {selectedDay}
-                                    </h3>
+                                    <div className="flex justify-between items-center mb-4">
+                                        <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider">
+                                            Movimentações do Dia {selectedDay}
+                                        </h3>
+                                        <button
+                                            onClick={() => {
+                                                setFixedBillEditing(null);
+                                                setFixedBillForm({
+                                                    id: '',
+                                                    type: 'saida',
+                                                    amount: '',
+                                                    category: 'Casa',
+                                                    description: '',
+                                                    day: selectedDay.toString(),
+                                                    accountId: 'acc_main',
+                                                    paidBy: 'conjunto',
+                                                    durationMode: 'indefinite',
+                                                    durationMonths: '4',
+                                                    startMonth: currentDate.toISOString().slice(0, 7)
+                                                });
+                                                setIsFixedBillsModalOpen(true);
+                                            }}
+                                            className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                                        >
+                                            <Plus size={13} /> Fixar Conta neste Dia
+                                        </button>
+                                    </div>
+
                                     <div className="space-y-3">
-                                        {monthlyTransactions.filter(t => new Date(t.date + 'T12:00:00').getDate() === selectedDay).length === 0 ? (
-                                            <p className="text-sm text-slate-400 py-8 text-center">Nenhum movimento registrado neste dia.</p>
-                                        ) : (
-                                            monthlyTransactions.filter(t => new Date(t.date + 'T12:00:00').getDate() === selectedDay).map(t => (
-                                                <div key={t.id} className="p-3.5 bg-slate-50 dark:bg-slate-950 rounded-2xl flex justify-between items-center">
+                                        {/* Contas Fixas Recorrentes Válidas no Dia */}
+                                        {repeatingRules.filter(r => {
+                                            if (Number(r.day) !== selectedDay) return false;
+                                            if (!r.durationMonths || Number(r.durationMonths) <= 0 || !r.startDate) return true;
+                                            const [sY, sM] = r.startDate.split('-').map(Number);
+                                            const currY = currentDate.getFullYear();
+                                            const currM = currentDate.getMonth() + 1;
+                                            const diff = (currY - sY) * 12 + (currM - sM);
+                                            return diff >= 0 && diff < Number(r.durationMonths);
+                                        }).map(r => {
+                                            const validity = getRuleValidity(r);
+                                            return (
+                                                <div key={`rule-${r.id}`} className="p-3.5 bg-amber-50/70 dark:bg-amber-950/30 rounded-2xl flex justify-between items-center border border-amber-200/60 dark:border-amber-900/40">
                                                     <div className="flex items-center gap-3">
-                                                        <div className="p-2.5 rounded-xl bg-white dark:bg-slate-800">
-                                                            {getCategoryIcon(t.category)}
+                                                        <div className="p-2.5 rounded-xl bg-white dark:bg-slate-800 text-amber-500 shadow-sm">
+                                                            <Clock size={16} />
                                                         </div>
                                                         <div>
-                                                            <p className="font-extrabold text-slate-800 dark:text-white text-xs">{t.description}</p>
-                                                            <p className="text-[10px] text-slate-400">{t.category}</p>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <p className="font-extrabold text-slate-800 dark:text-white text-xs">{r.description}</p>
+                                                                <span className="text-[9px] bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-300 px-1.5 py-0.2 rounded font-black uppercase tracking-wider">Conta Fixa</span>
+                                                            </div>
+                                                            <p className="text-[10px] text-amber-700 dark:text-amber-400 font-medium">
+                                                                {validity.shortText} • {r.category} • {r.paidBy === 'marido' ? '👦 Marido' : (r.paidBy === 'esposa' ? '👧 Esposa' : '👥 Casal')}
+                                                            </p>
                                                         </div>
                                                     </div>
-                                                    <p className={`font-black text-xs ${t.type === 'entrada' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                                        {t.type === 'entrada' ? '+' : '-'}{formatCurrency(t.amount)}
+                                                    <p className={`font-black text-xs ${r.type === 'entrada' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                        {r.type === 'entrada' ? '+' : '-'}{formatCurrency(r.amount)}
                                                     </p>
                                                 </div>
-                                            ))
+                                            );
+                                        })}
+
+                                        {/* Transações Reais Lançadas no Dia */}
+                                        {monthlyTransactions.filter(t => new Date(t.date + 'T12:00:00').getDate() === selectedDay).map(t => (
+                                            <div key={t.id} className="p-3.5 bg-slate-50 dark:bg-slate-950 rounded-2xl flex justify-between items-center">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="p-2.5 rounded-xl bg-white dark:bg-slate-800">
+                                                        {getCategoryIcon(t.category)}
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-extrabold text-slate-800 dark:text-white text-xs">{t.description}</p>
+                                                        <p className="text-[10px] text-slate-400">{t.category}</p>
+                                                    </div>
+                                                </div>
+                                                <p className={`font-black text-xs ${t.type === 'entrada' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                    {t.type === 'entrada' ? '+' : '-'}{formatCurrency(t.amount)}
+                                                </p>
+                                            </div>
+                                        ))}
+
+                                        {/* Estado Vazio caso não tenha nada no dia */}
+                                        {monthlyTransactions.filter(t => new Date(t.date + 'T12:00:00').getDate() === selectedDay).length === 0 &&
+                                         repeatingRules.filter(r => {
+                                            if (Number(r.day) !== selectedDay) return false;
+                                            if (!r.durationMonths || Number(r.durationMonths) <= 0 || !r.startDate) return true;
+                                            const [sY, sM] = r.startDate.split('-').map(Number);
+                                            const currY = currentDate.getFullYear();
+                                            const currM = currentDate.getMonth() + 1;
+                                            const diff = (currY - sY) * 12 + (currM - sM);
+                                            return diff >= 0 && diff < Number(r.durationMonths);
+                                        }).length === 0 && (
+                                            <p className="text-sm text-slate-400 py-8 text-center">Nenhum movimento ou conta fixa registrada neste dia.</p>
                                         )}
                                     </div>
                                 </div>
@@ -5766,7 +6311,7 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                 </div>
 
                                 {formData.type !== 'investimento' && !editingId && (
-                                    <div className="pt-1">
+                                    <div className="space-y-2 pt-1">
                                         <label className="flex items-center gap-3 p-3.5 bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50 rounded-2xl cursor-pointer">
                                             <input
                                                 type="checkbox"
@@ -5776,9 +6321,49 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                             />
                                             <div>
                                                 <span className="text-xs font-extrabold text-blue-900 dark:text-blue-300 block">Conta Fixa Recorrente</span>
-                                                <span className="text-[11px] text-blue-600 dark:text-blue-400">Lançar automaticamente todo mês</span>
+                                                <span className="text-[11px] text-blue-600 dark:text-blue-400">Lançar e projetar automaticamente nos próximos meses</span>
                                             </div>
                                         </label>
+
+                                        {formData.isRepeating && (
+                                            <div className="p-3.5 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2 animate-in fade-in">
+                                                <label className="text-[10px] font-black uppercase text-slate-400 block">Vigência desta Conta</label>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setFormData(prev => ({ ...prev, repeatDurationMode: 'indefinite' }))}
+                                                        className={`py-2 px-3 rounded-xl text-xs font-bold transition text-left ${formData.repeatDurationMode === 'indefinite' ? 'bg-blue-600 text-white shadow-sm' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'}`}
+                                                    >
+                                                        ♾️ Indeterminado
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setFormData(prev => ({ ...prev, repeatDurationMode: 'fixed' }))}
+                                                        className={`py-2 px-3 rounded-xl text-xs font-bold transition text-left ${formData.repeatDurationMode === 'fixed' ? 'bg-amber-500 text-white shadow-sm' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'}`}
+                                                    >
+                                                        ⏳ Período Fixo
+                                                    </button>
+                                                </div>
+
+                                                {formData.repeatDurationMode === 'fixed' && (
+                                                    <div className="pt-2">
+                                                        <span className="text-[10px] font-bold text-slate-400 block mb-1">Duração:</span>
+                                                        <div className="grid grid-cols-4 gap-1.5">
+                                                            {['3', '4', '6', '12'].map(m => (
+                                                                <button
+                                                                    key={m}
+                                                                    type="button"
+                                                                    onClick={() => setFormData(prev => ({ ...prev, repeatDurationMonths: m }))}
+                                                                    className={`py-1.5 rounded-lg text-xs font-black transition ${formData.repeatDurationMonths === m ? 'bg-amber-500 text-white shadow' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'}`}
+                                                                >
+                                                                    {m} meses
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
@@ -8158,6 +8743,288 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                     </button>
                                 </form>
                             )}
+                        </div>
+                    </div>
+                )}
+
+                {/* ========================================================================= */}
+                {/* MODAL DE GESTÃO DE CONTAS FIXAS & CONTRATOS COM VIGÊNCIA */}
+                {/* ========================================================================= */}
+                {isFixedBillsModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsFixedBillsModalOpen(false)}></div>
+                        <div className="relative bg-white dark:bg-slate-900 rounded-3xl w-full max-w-xl max-h-[90vh] overflow-y-auto p-6 sm:p-8 shadow-2xl border border-slate-100 dark:border-slate-800 animate-in fade-in zoom-in duration-200">
+                            <div className="flex justify-between items-center mb-6">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-3 bg-amber-50 dark:bg-amber-950/60 text-amber-500 rounded-2xl">
+                                        <Clock size={24} />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-lg font-black text-slate-800 dark:text-white">
+                                            {fixedBillEditing ? 'Editar Conta Fixa' : 'Nova Conta Fixa / Contrato'}
+                                        </h3>
+                                        <p className="text-xs text-slate-400">Configure aluguel contínuo, seguros temporários ou assinaturas</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setIsFixedBillsModalOpen(false)}
+                                    className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 rounded-2xl transition"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+
+                            <form onSubmit={handleSaveFixedBill} className="space-y-4">
+                                {/* Tipo (Saída / Entrada) */}
+                                <div>
+                                    <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Tipo</label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setFixedBillForm(prev => ({ ...prev, type: 'saida' }))}
+                                            className={`py-2.5 rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2 ${fixedBillForm.type === 'saida' ? 'bg-rose-500 text-white shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
+                                        >
+                                            <ArrowDown size={14} /> Despesa Fixa
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setFixedBillForm(prev => ({ ...prev, type: 'entrada' }))}
+                                            className={`py-2.5 rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2 ${fixedBillForm.type === 'entrada' ? 'bg-emerald-500 text-white shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
+                                        >
+                                            <ArrowUp size={14} /> Receita Fixa
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Descrição */}
+                                <div>
+                                    <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Descrição da Conta</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        placeholder="Ex: Seguro do Carro, Aluguel, Academia, Netflix..."
+                                        value={fixedBillForm.description}
+                                        onChange={e => setFixedBillForm(prev => ({ ...prev, description: e.target.value }))}
+                                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-sm font-bold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                    />
+                                </div>
+
+                                {/* Valor & Dia de Vencimento */}
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Valor Mensal ($)</label>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            required
+                                            placeholder="0.00"
+                                            value={fixedBillForm.amount}
+                                            onChange={e => setFixedBillForm(prev => ({ ...prev, amount: e.target.value }))}
+                                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-sm font-bold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Dia de Cobrança</label>
+                                        <select
+                                            value={fixedBillForm.day}
+                                            onChange={e => setFixedBillForm(prev => ({ ...prev, day: e.target.value }))}
+                                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-sm font-bold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                        >
+                                            {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
+                                                <option key={d} value={d}>Todo dia {d}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {/* Categoria & Quem Paga */}
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Categoria</label>
+                                        <select
+                                            value={fixedBillForm.category}
+                                            onChange={e => setFixedBillForm(prev => ({ ...prev, category: e.target.value }))}
+                                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-sm font-bold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                        >
+                                            {categories.map(c => (
+                                                <option key={c.name} value={c.name}>{c.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Responsável</label>
+                                        <select
+                                            value={fixedBillForm.paidBy}
+                                            onChange={e => setFixedBillForm(prev => ({ ...prev, paidBy: e.target.value }))}
+                                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-sm font-bold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                        >
+                                            <option value="conjunto">👥 Conjunto (Casal)</option>
+                                            <option value="marido">👦 Marido</option>
+                                            <option value="esposa">👧 Esposa</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {/* SELEÇÃO DE VIGÊNCIA (INDETERMINADO VS TEMPO FIXO) */}
+                                <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
+                                    <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 block mb-2">Vigência / Duração do Contrato</label>
+                                    <div className="grid grid-cols-2 gap-2 mb-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => setFixedBillForm(prev => ({ ...prev, durationMode: 'indefinite' }))}
+                                            className={`p-3 rounded-2xl text-left border transition ${fixedBillForm.durationMode === 'indefinite' ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-500 text-blue-700 dark:text-blue-300 ring-2 ring-blue-500/20' : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'}`}
+                                        >
+                                            <span className="block font-black text-xs">♾️ Indeterminado</span>
+                                            <span className="text-[10px] text-slate-400">Ex: Aluguel contínuo, até você mudar</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setFixedBillForm(prev => ({ ...prev, durationMode: 'fixed' }))}
+                                            className={`p-3 rounded-2xl text-left border transition ${fixedBillForm.durationMode === 'fixed' ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-500 text-amber-700 dark:text-amber-300 ring-2 ring-amber-500/20' : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'}`}
+                                        >
+                                            <span className="block font-black text-xs">⏳ Período Fixo</span>
+                                            <span className="text-[10px] text-slate-400">Ex: Seguro de carro por 4 meses</span>
+                                        </button>
+                                    </div>
+
+                                    {/* Opções de Período Fixo */}
+                                    {fixedBillForm.durationMode === 'fixed' && (
+                                        <div className="p-4 bg-amber-50/60 dark:bg-amber-950/30 rounded-2xl border border-amber-200 dark:border-amber-900/40 space-y-3 animate-in fade-in">
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="text-[10px] font-black uppercase text-amber-800 dark:text-amber-300 block mb-1">Mês de Início</label>
+                                                    <input
+                                                        type="month"
+                                                        value={fixedBillForm.startMonth}
+                                                        onChange={e => setFixedBillForm(prev => ({ ...prev, startMonth: e.target.value }))}
+                                                        className="w-full bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 dark:text-white"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-black uppercase text-amber-800 dark:text-amber-300 block mb-1">Duração (Meses)</label>
+                                                    <div className="flex gap-1">
+                                                        {['3', '4', '6', '12'].map(m => (
+                                                            <button
+                                                                key={m}
+                                                                type="button"
+                                                                onClick={() => setFixedBillForm(prev => ({ ...prev, durationMonths: m }))}
+                                                                className={`flex-1 py-2 rounded-xl text-xs font-black transition ${fixedBillForm.durationMonths === m ? 'bg-amber-500 text-white shadow' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-amber-200 dark:border-amber-800'}`}
+                                                            >
+                                                                {m}m
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <p className="text-[11px] text-amber-700 dark:text-amber-400 font-medium">
+                                                💡 Esta conta estará ativa pelos próximos <strong>{fixedBillForm.durationMonths} meses</strong> a partir de <strong>{fixedBillForm.startMonth}</strong>. Quando expirar, o app emitirá um lembrete para renovação ou ajuste de valor!
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="pt-4 flex gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsFixedBillsModalOpen(false)}
+                                        className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 font-bold text-xs text-slate-600 dark:text-slate-300 rounded-2xl transition"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 font-black text-xs text-white rounded-2xl transition shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2"
+                                    >
+                                        <Check size={16} /> {fixedBillEditing ? 'Salvar Alterações' : 'Cadastrar Conta Fixa'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* ========================================================================= */}
+                {/* MODAL DE RENOVAÇÃO RÁPIDA DE CONTRATO */}
+                {/* ========================================================================= */}
+                {isRenewModalOpen && renewingBill && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsRenewModalOpen(false)}></div>
+                        <div className="relative bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md p-6 sm:p-8 shadow-2xl border border-slate-100 dark:border-slate-800 animate-in fade-in zoom-in duration-200">
+                            <div className="flex justify-between items-center mb-6">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-3 bg-blue-50 dark:bg-blue-950/60 text-blue-500 rounded-2xl">
+                                        <RotateCcw size={22} />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-lg font-black text-slate-800 dark:text-white">Renovar Contrato</h3>
+                                        <p className="text-xs text-slate-400">{renewingBill.description}</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setIsRenewModalOpen(false)}
+                                    className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 rounded-2xl transition"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+
+                            <form onSubmit={handleRenewFixedBill} className="space-y-4">
+                                <div className="p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800">
+                                    <div className="flex justify-between items-center text-xs text-slate-400 mb-1">
+                                        <span>Valor Anterior</span>
+                                        <span className="font-bold text-slate-600 dark:text-slate-300">{formatCurrency(renewingBill.amount)}/mês</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-xs text-slate-400">
+                                        <span>Duração Anterior</span>
+                                        <span className="font-bold text-slate-600 dark:text-slate-300">{renewingBill.durationMonths || 4} meses</span>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Novo Valor Mensal ($)</label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        required
+                                        placeholder="0.00"
+                                        value={renewFormData.newAmount}
+                                        onChange={e => setRenewFormData(prev => ({ ...prev, newAmount: e.target.value }))}
+                                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-sm font-bold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Prorrogar por mais:</label>
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {['3', '4', '6', '12'].map(m => (
+                                            <button
+                                                key={m}
+                                                type="button"
+                                                onClick={() => setRenewFormData(prev => ({ ...prev, extendMonths: m }))}
+                                                className={`py-2.5 rounded-2xl text-xs font-black transition ${renewFormData.extendMonths === m ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}
+                                            >
+                                                +{m} meses
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="pt-4 flex gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsRenewModalOpen(false)}
+                                        className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 font-bold text-xs text-slate-600 dark:text-slate-300 rounded-2xl transition"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 font-black text-xs text-white rounded-2xl transition shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2"
+                                    >
+                                        <Check size={16} /> Confirmar Renovação
+                                    </button>
+                                </div>
+                            </form>
                         </div>
                     </div>
                 )}
