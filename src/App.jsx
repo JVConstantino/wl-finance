@@ -46,114 +46,6 @@ const defaultAccounts = [
     { id: 'acc_credit', name: 'Cartão de Crédito', type: 'credito', color: 'from-rose-500 to-pink-700' }
 ];
 
-const initialSampleSavingsGoals = [
-    { id: 'sg_1', title: 'Viagem de Férias', targetAmount: 12000, currentAmount: 4800, deadline: '2027-01-15', icon: '🏖️', color: 'from-amber-500 to-orange-600' },
-    { id: 'sg_2', title: 'Reserva de Emergência', targetAmount: 20000, currentAmount: 11500, deadline: '2026-12-31', icon: '🛡️', color: 'from-emerald-600 to-teal-700' },
-    { id: 'sg_3', title: 'Reforma do Apê', targetAmount: 15000, currentAmount: 3200, deadline: '2026-11-30', icon: '🛋️', color: 'from-purple-600 to-pink-600' }
-];
-
-const initialSampleShoppingItems = [
-    { id: 'shop_1', name: 'Leite desnatado', quantity: '3 un', estimatedPrice: 16.50, completed: false, category: 'Laticínios', addedBy: 'esposa' },
-    { id: 'shop_2', name: 'Café em grãos', quantity: '1 pct', estimatedPrice: 28.00, completed: true, category: 'Mercearia', addedBy: 'marido' },
-    { id: 'shop_3', name: 'Frutas da semana', quantity: '1 saco', estimatedPrice: 35.00, completed: false, category: 'Hortifruti', addedBy: 'conjunto' }
-];
-
-const defaultSampleFinancings = [
-    {
-        id: 'fin_sample_car',
-        title: 'Financiamento do Carro',
-        type: 'veiculo',
-        installmentAmount: 1250.00,
-        totalInstallments: 48,
-        paidInstallments: 14,
-        dueDay: 10,
-        accountId: 'acc_main',
-        paidBy: 'conjunto',
-        interestRateAnnual: 18.5,
-        startDate: '2024-01-10',
-        icon: '🚗',
-        autoDebit: true
-    }
-];
-
-const initialSampleTransactions = [
-    {
-        id: 'tx_init_1',
-        type: 'entrada',
-        amount: 5200.00,
-        category: 'Salário',
-        date: new Date().toISOString().split('T')[0],
-        description: 'Salário Mensal',
-        status: 'pago',
-        accountId: 'acc_main',
-        paidBy: 'marido'
-    },
-    {
-        id: 'tx_init_2',
-        type: 'saida',
-        amount: 1450.00,
-        category: 'Casa',
-        date: new Date().toISOString().split('T')[0],
-        description: 'Aluguel do Apartamento',
-        status: 'pago',
-        accountId: 'acc_main',
-        paidBy: 'conjunto'
-    },
-    {
-        id: 'tx_init_3',
-        type: 'saida',
-        amount: 380.50,
-        category: 'Alimentação',
-        date: new Date().toISOString().split('T')[0],
-        description: 'Compras Supermercado',
-        status: 'pago',
-        accountId: 'acc_credit',
-        paidBy: 'esposa'
-    },
-    {
-        id: 'tx_init_4',
-        type: 'saida',
-        amount: 55.90,
-        category: 'Assinaturas',
-        date: new Date().toISOString().split('T')[0],
-        description: 'Netflix Premium',
-        status: 'pago',
-        accountId: 'acc_credit',
-        isFromRepeatRule: 'rule_sample_netflix'
-    },
-    {
-        id: 'tx_init_5',
-        type: 'investimento',
-        amount: 1000,
-        category: 'Renda Fixa',
-        date: new Date().toISOString().split('T')[0],
-        description: 'Tesouro Selic 2029',
-        status: 'pago',
-        accountId: 'acc_main'
-    }
-];
-
-const initialSampleRules = [
-    {
-        id: 'rule_sample_netflix',
-        type: 'saida',
-        amount: 55.90,
-        category: 'Assinaturas',
-        description: 'Netflix Premium',
-        day: 10,
-        accountId: 'acc_credit'
-    },
-    {
-        id: 'rule_sample_spotify',
-        type: 'saida',
-        amount: 34.90,
-        category: 'Assinaturas',
-        description: 'Spotify Família',
-        day: 15,
-        accountId: 'acc_credit'
-    }
-];
-
 const initialChallenges = [
     {
         id: 'ch_1',
@@ -1628,39 +1520,18 @@ Mensagem do casal:
                     showToast(`✅ ${data.transactions.length} transações sincronizadas do ${card?.institution || ''}!`);
                     setIsSyncingPlaid(false);
                     return;
+                } else if (res.ok) {
+                    showToast(`ℹ️ Nenhuma nova transação encontrada no ${card?.institution || 'banco'}.`);
+                    setIsSyncingPlaid(false);
+                    return;
                 }
             } catch (err) {
                 console.error("Erro na sincronização da API Plaid:", err);
             }
         }
 
-        // Simulação instantânea caso ainda não tenha chave de produção
-        setTimeout(() => {
-            setIsSyncingPlaid(false);
-            const sampleExpenses = [
-                { desc: 'Whole Foods Market', amount: 68.40, cat: 'Mercado' },
-                { desc: 'Chevron Gas Station', amount: 45.00, cat: 'Transporte' },
-                { desc: 'Starbucks Coffee', amount: 9.75, cat: 'Alimentação' },
-                { desc: 'Target Store', amount: 32.15, cat: 'Outros' }
-            ];
-            const randomExpense = sampleExpenses[Math.floor(Math.random() * sampleExpenses.length)];
-
-            const newSyncTx = {
-                id: 'tx_plaid_' + Date.now(),
-                type: 'saida',
-                amount: randomExpense.amount,
-                category: randomExpense.cat,
-                date: new Date().toISOString().split('T')[0],
-                description: `${card?.institution || 'Cartão'} • ${randomExpense.desc}`,
-                status: 'pago',
-                accountId: 'acc_credit',
-                paidBy: card?.owner || 'conjunto'
-            };
-
-            setTransactions(prev => [newSyncTx, ...prev]);
-            setConnectedCards(prev => prev.map(c => c.id === cardId ? { ...c, lastSync: 'Agora mesmo', balance: Math.max(0, (Number(c.balance) || 0) + randomExpense.amount) } : c));
-            showToast(`✅ Cartão ${card?.institution || ''} (${ownerName}) sincronizado! Nova compra detectada.`);
-        }, 1200);
+        setIsSyncingPlaid(false);
+        showToast("Configure suas chaves do Plaid na aba 'Plaid API' para sincronizar compras reais.");
     };
 
     const handleOpenOfficialPlaidLink = async (owner = 'marido') => {
