@@ -49,6 +49,36 @@ export const isBusinessTx = (t) => {
     return cat.includes('Limpeza') || cat.includes('Ajudantes') || cat.includes('Materiais Limpeza') || desc.includes('ajudante') || desc.includes('diaria limpeza') || desc.includes('cheque limpeza');
 };
 
+export const isRealSubscription = (item) => {
+    if (!item) return false;
+    const desc = (item.description || '').toLowerCase();
+    const cat = (item.category || '').toLowerCase();
+
+    // Gastos mensais / Contas Fixas da casa que NÃO são assinaturas
+    const fixedExpensesKeywords = [
+        'aluguel', 'rent', 'carro', 'car', 'financiamento', 'parcela', 'seguro', 'insurance',
+        'condominio', 'luz', 'energia', 'energy', 'power', 'electric', 'agua', 'water', 'gas',
+        'internet', 'celular', 'telefone', 'phone', 'iptu', 'ipva', 'diaria', 'ajudante',
+        'escola', 'faculdade', 'mensalidade', 'school', 'health insurance', 'plano de saude', 'medico',
+        'dental', 'fatura'
+    ];
+    if (fixedExpensesKeywords.some(kw => desc.includes(kw))) return false;
+
+    // Serviços Digitais / Streamings / Assinaturas Reais
+    const subscriptionKeywords = [
+        'netflix', 'amazon', 'prime', 'apple', 'apple tv', 'icloud', 'spotify', 'youtube',
+        'disney', 'hbo', 'max', 'paramount', 'star+', 'peacock', 'hulu', 'chatgpt', 'openai',
+        'midjourney', 'adobe', 'gym', 'academia', 'planet fitness', 'crunch', 'playstation',
+        'ps plus', 'xbox', 'game pass', 'nintendo', 'duolingo', 'canva', 'cursor', 'github',
+        'app store', 'google play', 'streaming', 'assinatura', 'dropbox', 'google one', 'deezer'
+    ];
+    if (subscriptionKeywords.some(kw => desc.includes(kw))) return true;
+
+    if (cat === 'assinaturas' || cat === 'streaming' || cat === 'software') return true;
+
+    return false;
+};
+
 const defaultAccounts = [
     { id: 'acc_main', name: 'Conta Principal', type: 'banco', color: 'from-blue-600 to-indigo-800' },
     { id: 'acc_wallet', name: 'Carteira Física', type: 'dinheiro', color: 'from-emerald-500 to-teal-700' },
@@ -294,6 +324,7 @@ export default function App() {
         newAmount: '',
         extendMonths: '4'
     });
+    const [fixedBillsFilter, setFixedBillsFilter] = useState('todos'); // 'todos' | 'assinaturas' | 'fixos'
 
     // 5.6 Estado do Banner de Contas a Vencer (Arrastar para dispensar na sessão atual)
     const [isDueBannerDismissed, setIsDueBannerDismissed] = useState(false);
@@ -2982,9 +3013,15 @@ Responda ESTRITAMENTE um objeto JSON no formato:
         }
     };
 
-    const assinaturasAtivas = repeatingRules.filter(r => r.type === 'saida');
+    const todasContasRecorrentes = repeatingRules.filter(r => r.type === 'saida');
+    const assinaturasAtivas = todasContasRecorrentes.filter(r => isRealSubscription(r));
+    const contasFixasRecorrentes = todasContasRecorrentes.filter(r => !isRealSubscription(r));
+
     const gastoMensalAssinaturas = assinaturasAtivas.reduce((acc, r) => acc + (r.amount || 0), 0);
     const gastoAnualAssinaturas = gastoMensalAssinaturas * 12;
+
+    const gastoMensalContasFixas = contasFixasRecorrentes.reduce((acc, r) => acc + (r.amount || 0), 0);
+    const gastoAnualContasFixas = gastoMensalContasFixas * 12;
 
     const futureProjectionData = useMemo(() => {
         const currentTotalBalance = Object.values(accountBalances).reduce((a, b) => a + b, 0);
@@ -4216,7 +4253,150 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                     {/* COLUNA ESQUERDA (65% width no desktop: 8 cols de 12) */}
                                     <div className="lg:col-span-7 xl:col-span-8 space-y-6">
 
-                                        {/* CARD DE APURAÇÃO DA EMPRESA DE LIMPEZA (BUSINESS HUB) */}
+                                        {/* 1. CARTÕES DE CONTAS BANCÁRIAS E CARTÕES (NO TOPO) */}
+                                        <div>
+                                            <div className="flex flex-wrap justify-between items-center gap-2 mb-3 px-1">
+                                                <div>
+                                                    <div className="flex items-center gap-2">
+                                                        <h3 className="text-base font-black text-slate-800 dark:text-white">Minhas Contas & Cartões</h3>
+                                                        {selectedAccountId !== 'todos' && (
+                                                            <button
+                                                                onClick={() => setSelectedAccountId('todos')}
+                                                                className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-100 dark:bg-blue-950/80 text-blue-600 dark:text-blue-400 hover:bg-blue-200 transition flex items-center gap-1"
+                                                            >
+                                                                <X size={12} /> Ver Todas
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    <span className="text-xs font-bold text-slate-400">
+                                                        {selectedAccountId === 'todos' 
+                                                            ? `${accounts.length} contas configuradas • Toque em uma conta para ver o extrato`
+                                                            : `Filtrando por: ${selectedAccountObj?.name || 'Conta'}`}
+                                                    </span>
+                                                </div>
+                                                <button
+                                                    onClick={() => setIsPlaidModalOpen(true)}
+                                                    className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-2xl text-xs font-extrabold shadow-sm transition flex items-center gap-1.5 active:scale-95"
+                                                >
+                                                    <Zap size={14} className="text-amber-300" /> 💳 Sincronizar Cartões EUA
+                                                </button>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3.5">
+                                                {accounts.map(acc => {
+                                                    const currentBalance = accountBalances[acc.id] || 0;
+                                                    const isNegativeCredit = acc.type === 'credito' && currentBalance < 0;
+                                                    const isSelected = selectedAccountId === acc.id;
+
+                                                    // Identidade visual vibrante, colorida e marcante
+                                                    let cardStyle = {
+                                                        bg: 'from-blue-600 via-indigo-600 to-blue-800',
+                                                        icon: <Landmark size={20} className="text-white" />,
+                                                        watermark: <Landmark size={90} className="text-white" />,
+                                                        typeLabel: 'Conta Bancária',
+                                                        balanceLabel: 'Saldo Disponível',
+                                                        symbol: '🏛️'
+                                                    };
+
+                                                    if (acc.type === 'credito') {
+                                                        cardStyle = {
+                                                            bg: 'from-purple-600 via-pink-600 to-rose-600',
+                                                            icon: <CreditCard size={20} className="text-white" />,
+                                                            watermark: <CreditCard size={90} className="text-white" />,
+                                                            typeLabel: 'Cartão de Crédito',
+                                                            balanceLabel: 'Fatura Atual',
+                                                            symbol: '💳'
+                                                        };
+                                                    } else if (acc.type === 'dinheiro') {
+                                                        cardStyle = {
+                                                            bg: 'from-emerald-600 via-teal-600 to-emerald-800',
+                                                            icon: <Wallet size={20} className="text-white" />,
+                                                            watermark: <span className="text-8xl font-black font-serif text-white select-none leading-none opacity-80">$</span>,
+                                                            typeLabel: 'Carteira Física • Dólares',
+                                                            balanceLabel: 'Dinheiro em Mãos',
+                                                            symbol: '💵'
+                                                        };
+                                                    }
+
+                                                    return (
+                                                        <div
+                                                            key={acc.id}
+                                                            onClick={() => setSelectedAccountId(prev => prev === acc.id ? 'todos' : acc.id)}
+                                                            className={`rounded-3xl p-5 shadow-lg bg-gradient-to-br ${cardStyle.bg} text-white relative overflow-hidden flex flex-col justify-between h-44 border transition-all cursor-pointer select-none active:scale-[0.98] ${
+                                                                isSelected 
+                                                                    ? 'ring-4 ring-white/80 shadow-2xl scale-[1.02] border-white/60' 
+                                                                    : 'border-white/20 hover:border-white/40 hover:shadow-xl hover:scale-[1.01]'
+                                                            }`}
+                                                        >
+                                                            {/* Marca d'água estilizada no fundo */}
+                                                            <div className="absolute -right-3 -bottom-3 opacity-15 pointer-events-none">
+                                                                {cardStyle.watermark}
+                                                            </div>
+
+                                                            {/* Topo do Cartão */}
+                                                            <div className="flex justify-between items-start z-10">
+                                                                <div className="flex items-center gap-2.5">
+                                                                  <div className="w-9 h-9 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center shadow-sm">
+                                                                        {cardStyle.icon}
+                                                                    </div>
+                                                                    <div>
+                                                                        <h4 className="text-sm font-black text-white leading-tight">
+                                                                            {acc.name}
+                                                                        </h4>
+                                                                        <span className="text-[10px] font-bold text-white/80">
+                                                                            {cardStyle.typeLabel}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+
+                                                                {isSelected ? (
+                                                                    <span className="text-[10px] font-black bg-white text-slate-900 px-2.5 py-0.5 rounded-full shadow flex items-center gap-1 animate-in fade-in">
+                                                                        ✓ Filtrando
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="text-[10px] font-bold bg-black/15 text-white/90 px-2 py-0.5 rounded-lg">
+                                                                        {cardStyle.symbol}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+
+                                                            {/* Base do Cartão */}
+                                                            <div className="z-10 pt-2 border-t border-white/15">
+                                                                <div className="flex items-end justify-between">
+                                                                    <div>
+                                                                        <span className="text-[10px] font-bold uppercase tracking-wider text-white/80 block mb-0.5">
+                                                                            {cardStyle.balanceLabel}
+                                                                        </span>
+                                                                        <h3 className="text-2xl sm:text-[26px] font-black tracking-tight text-white drop-shadow-sm leading-tight">
+                                                                            {formatCurrency(currentBalance)}
+                                                                        </h3>
+                                                                    </div>
+
+                                                                    {isNegativeCredit ? (
+                                                                        <button
+                                                                            onClick={(e) => { 
+                                                                            e.stopPropagation();
+                                                                            setInvoiceAccountToPay(acc); 
+                                                                            setIsPayInvoiceModalOpen(true); 
+                                                                        }}
+                                                                            className="bg-white hover:bg-slate-100 text-slate-900 text-xs font-black py-1.5 px-3 rounded-xl transition shadow flex items-center gap-1 active:scale-95"
+                                                                        >
+                                                                            <CheckCircle2 size={13} className="text-rose-600" /> Pagar Fatura
+                                                                        </button>
+                                                                    ) : (
+                                                                        <span className="text-[10px] font-bold text-white/80 flex items-center gap-1">
+                                                                            {isSelected ? 'Toque p/ limpar' : 'Ver Extrato →'}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        {/* 2. CARD DE APURAÇÃO DA EMPRESA DE LIMPEZA (LOGO ABAIXO DAS CONTAS) */}
                                         <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white border border-indigo-500/40 shadow-xl relative overflow-hidden">
                                             {/* Glow decorativo de fundo */}
                                             <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
@@ -4318,150 +4498,7 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                             </div>
                                         </div>
 
-                                        {/* Cartões de Contas Bancárias e Cartões */}
-                                        <div>
-                                            <div className="flex flex-wrap justify-between items-center gap-2 mb-3 px-1">
-                                                <div>
-                                                    <div className="flex items-center gap-2">
-                                                        <h3 className="text-base font-black text-slate-800 dark:text-white">Minhas Contas & Cartões</h3>
-                                                        {selectedAccountId !== 'todos' && (
-                                                            <button
-                                                                onClick={() => setSelectedAccountId('todos')}
-                                                                className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-100 dark:bg-blue-950/80 text-blue-600 dark:text-blue-400 hover:bg-blue-200 transition flex items-center gap-1"
-                                                            >
-                                                                <X size={12} /> Ver Todas
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                    <span className="text-xs font-bold text-slate-400">
-                                                        {selectedAccountId === 'todos' 
-                                                            ? `${accounts.length} contas configuradas • Toque em uma conta para ver o extrato`
-                                                            : `Filtrando por: ${selectedAccountObj?.name || 'Conta'}`}
-                                                    </span>
-                                                </div>
-                                                <button
-                                                    onClick={() => setIsPlaidModalOpen(true)}
-                                                    className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-2xl text-xs font-extrabold shadow-sm transition flex items-center gap-1.5 active:scale-95"
-                                                >
-                                                    <Zap size={14} className="text-amber-300" /> 💳 Sincronizar Cartões EUA
-                                                </button>
-                                            </div>
-
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3.5">
-                                                {accounts.map(acc => {
-                                                    const currentBalance = accountBalances[acc.id] || 0;
-                                                    const isNegativeCredit = acc.type === 'credito' && currentBalance < 0;
-                                                    const isSelected = selectedAccountId === acc.id;
-
-                                                    // Identidade visual vibrante, colorida e marcante
-                                                    let cardStyle = {
-                                                        bg: 'from-blue-600 via-indigo-600 to-blue-800',
-                                                        icon: <Landmark size={20} className="text-white" />,
-                                                        watermark: <Landmark size={90} className="text-white" />,
-                                                        typeLabel: 'Conta Bancária',
-                                                        balanceLabel: 'Saldo Disponível',
-                                                        symbol: '🏛️'
-                                                    };
-
-                                                    if (acc.type === 'credito') {
-                                                        cardStyle = {
-                                                            bg: 'from-purple-600 via-pink-600 to-rose-600',
-                                                            icon: <CreditCard size={20} className="text-white" />,
-                                                            watermark: <CreditCard size={90} className="text-white" />,
-                                                            typeLabel: 'Cartão de Crédito',
-                                                            balanceLabel: 'Fatura Atual',
-                                                            symbol: '💳'
-                                                        };
-                                                    } else if (acc.type === 'dinheiro') {
-                                                        cardStyle = {
-                                                            bg: 'from-emerald-600 via-teal-600 to-emerald-800',
-                                                            icon: <Wallet size={20} className="text-white" />,
-                                                            watermark: <span className="text-8xl font-black font-serif text-white select-none leading-none opacity-80">$</span>,
-                                                            typeLabel: 'Carteira Física • Dólares',
-                                                            balanceLabel: 'Dinheiro em Mãos',
-                                                            symbol: '💵'
-                                                        };
-                                                    }
-
-                                                    return (
-                                                        <div
-                                                            key={acc.id}
-                                                            onClick={() => setSelectedAccountId(prev => prev === acc.id ? 'todos' : acc.id)}
-                                                            className={`rounded-3xl p-5 shadow-lg bg-gradient-to-br ${cardStyle.bg} text-white relative overflow-hidden flex flex-col justify-between h-44 border transition-all cursor-pointer select-none active:scale-[0.98] ${
-                                                                isSelected 
-                                                                    ? 'ring-4 ring-white/80 shadow-2xl scale-[1.02] border-white/60' 
-                                                                    : 'border-white/20 hover:border-white/40 hover:shadow-xl hover:scale-[1.01]'
-                                                            }`}
-                                                        >
-                                                            {/* Marca d'água estilizada no fundo */}
-                                                            <div className="absolute -right-3 -bottom-3 opacity-15 pointer-events-none">
-                                                                {cardStyle.watermark}
-                                                            </div>
-
-                                                            {/* Topo do Cartão */}
-                                                            <div className="flex justify-between items-start z-10">
-                                                                <div className="flex items-center gap-2.5">
-                                                                    <div className="w-9 h-9 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center shadow-sm">
-                                                                        {cardStyle.icon}
-                                                                    </div>
-                                                                    <div>
-                                                                        <h4 className="text-sm font-black text-white leading-tight">
-                                                                            {acc.name}
-                                                                        </h4>
-                                                                        <span className="text-[10px] font-bold text-white/80">
-                                                                            {cardStyle.typeLabel}
-                                                                        </span>
-                                                                    </div>
-                                                                </div>
-
-                                                                {isSelected ? (
-                                                                    <span className="text-[10px] font-black bg-white text-slate-900 px-2.5 py-0.5 rounded-full shadow flex items-center gap-1 animate-in fade-in">
-                                                                        ✓ Filtrando
-                                                                    </span>
-                                                                ) : (
-                                                                    <span className="text-[10px] font-bold bg-black/15 text-white/90 px-2 py-0.5 rounded-lg">
-                                                                        {cardStyle.symbol}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-
-                                                            {/* Base do Cartão */}
-                                                            <div className="z-10 pt-2 border-t border-white/15">
-                                                                <div className="flex items-end justify-between">
-                                                                    <div>
-                                                                        <span className="text-[10px] font-bold uppercase tracking-wider text-white/80 block mb-0.5">
-                                                                            {cardStyle.balanceLabel}
-                                                                        </span>
-                                                                        <h3 className="text-2xl sm:text-[26px] font-black tracking-tight text-white drop-shadow-sm leading-tight">
-                                                                            {formatCurrency(currentBalance)}
-                                                                        </h3>
-                                                                    </div>
-
-                                                                    {isNegativeCredit ? (
-                                                                        <button
-                                                                            onClick={(e) => { 
-                                                                            e.stopPropagation();
-                                                                            setInvoiceAccountToPay(acc); 
-                                                                            setIsPayInvoiceModalOpen(true); 
-                                                                        }}
-                                                                            className="bg-white hover:bg-slate-100 text-slate-900 text-xs font-black py-1.5 px-3 rounded-xl transition shadow flex items-center gap-1 active:scale-95"
-                                                                        >
-                                                                            <CheckCircle2 size={13} className="text-rose-600" /> Pagar Fatura
-                                                                        </button>
-                                                                    ) : (
-                                                                        <span className="text-[10px] font-bold text-white/80 flex items-center gap-1">
-                                                                            {isSelected ? 'Toque p/ limpar' : 'Ver Extrato →'}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-
-                                        {/* Tabela / Lista de Lançamentos Recentes (EXTRATO REPAGINADO) */}
+                                        {/* 3. TABELA / LISTA DE LANÇAMENTOS RECENTES (EXTRATO) */}
                                         <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-100 dark:border-slate-800/80">
                                             
                                             {/* Spotlight / Detalhes da Conta Selecionada */}
@@ -4734,7 +4771,7 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                     {/* COLUNA DIREITA (35% width no desktop: 4/5 cols de 12) */}
                                     <div className="lg:col-span-5 xl:col-span-4 space-y-6">
 
-                                        {/* Gráfico Donut de Despesas */}
+                                        {/* Gráfico Donut de Despesas (DIVISÃO DE GASTOS) */}
                                         <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-100 dark:border-slate-800/80 flex flex-col items-center">
                                             <div className="w-full flex justify-between items-center mb-4">
                                                 <h3 className="text-sm font-black text-slate-800 dark:text-white">Divisão de Gastos</h3>
@@ -4753,9 +4790,9 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                 </div>
                                             </div>
 
-                                            <div className="w-full space-y-2 mt-4 max-h-56 overflow-y-auto pr-1">
+                                            <div className="w-full space-y-2 mt-4 max-h-96 overflow-y-auto pr-1">
                                                 {analysisData.data.map((item) => (
-                                                    <div key={item.name} className="flex items-center justify-between text-xs py-1 border-b border-slate-50 dark:border-slate-800/50">
+                                                    <div key={item.name} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-50 dark:border-slate-800/50">
                                                         <div className="flex items-center gap-2 min-w-0">
                                                             <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: item.color }}></div>
                                                             <span className="font-bold text-slate-700 dark:text-slate-300 truncate">{item.name}</span>
@@ -4766,189 +4803,6 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                         </div>
                                                     </div>
                                                 ))}
-                                            </div>
-                                        </div>
-
-                                        {/* Limites e Metas Rápidas */}
-                                        <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-100 dark:border-slate-800/80">
-                                            <div className="flex justify-between items-center mb-4">
-                                                <h3 className="text-sm font-black text-slate-800 dark:text-white flex items-center gap-2">
-                                                    <Target size={16} className="text-blue-500" /> Metas de Orçamento
-                                                </h3>
-                                                <button
-                                                    onClick={() => { setActiveTab('analise'); setAnalysisView('metas'); }}
-                                                    className="text-[11px] font-extrabold text-blue-600 hover:underline"
-                                                >
-                                                    Ver todas
-                                                </button>
-                                            </div>
-
-                                            <div className="space-y-3">
-                                                {allCategories.saida.slice(0, 4).map(category => {
-                                                    const goal = monthlyGoals[category] || 0;
-                                                    const spent = analysisData.grouped[category] || 0;
-                                                    const percent = goal > 0 ? Math.min((spent / goal) * 100, 100) : 0;
-                                                    const progressColor = percent >= 100 ? 'bg-rose-500' : percent >= 80 ? 'bg-amber-500' : 'bg-emerald-500';
-
-                                                    return (
-                                                        <div
-                                                            key={category}
-                                                            className="p-3 bg-slate-50 dark:bg-slate-950 rounded-2xl cursor-pointer hover:border-blue-300 border border-transparent transition"
-                                                            onClick={() => {
-                                                                setEditingCategoryGoal(category);
-                                                                setGoalAmountInput(goal ? goal.toString() : '');
-                                                                setIsGoalModalOpen(true);
-                                                            }}
-                                                        >
-                                                            <div className="flex justify-between items-center text-xs mb-1.5">
-                                                                <span className="font-bold text-slate-700 dark:text-slate-300">{category}</span>
-                                                                <span className="font-black text-slate-800 dark:text-white">
-                                                                    {formatCurrency(spent)} <span className="text-slate-400 font-medium">/ {goal > 0 ? formatCurrency(goal) : 'sem meta'}</span>
-                                                                </span>
-                                                            </div>
-                                                            <div className="h-2 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
-                                                                <div className={`h-full rounded-full transition-all duration-700 ${progressColor}`} style={{ width: `${percent}%` }}></div>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-
-                                        {/* Card Assinaturas e Fixos */}
-                                        <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-3xl p-5 sm:p-6 shadow-md relative overflow-hidden">
-                                            <div className="absolute right-0 top-0 opacity-10 pointer-events-none"><Repeat size={110} /></div>
-                                            <div className="flex justify-between items-start mb-3">
-                                                <div>
-                                                    <p className="text-xs font-bold text-indigo-300 uppercase tracking-wider">Custo Automático</p>
-                                                    <h3 className="text-2xl font-black mt-0.5">{formatCurrency(gastoMensalAssinaturas)} <span className="text-xs font-medium text-slate-400">/mês</span></h3>
-                                                </div>
-                                                <button
-                                                    onClick={() => { setActiveTab('analise'); setAnalysisView('assinaturas'); }}
-                                                    className="text-xs bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-xl font-extrabold transition"
-                                                >
-                                                    Detalhes
-                                                </button>
-                                            </div>
-                                            <p className="text-xs text-slate-400 font-medium">
-                                                {assinaturasAtivas.length} assinaturas e contas fixas cadastradas. Anualmente totalizam {formatCurrency(gastoAnualAssinaturas)}.
-                                            </p>
-                                        </div>
-
-                                        {/* CARD DE COFRINHOS & SONHOS DO CASAL */}
-                                        <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-100 dark:border-slate-800/80">
-                                            <div className="flex justify-between items-center mb-4">
-                                                <div>
-                                                    <h3 className="text-sm font-black text-slate-800 dark:text-white flex items-center gap-2">
-                                                        <PiggyBank size={18} className="text-amber-500" /> Cofrinhos & Sonhos do Casal
-                                                    </h3>
-                                                    <p className="text-[11px] text-slate-400 font-medium">Metas e economias conjuntas</p>
-                                                </div>
-                                                <button
-                                                    onClick={() => setIsSavingsModalOpen(true)}
-                                                    className="text-[11px] font-extrabold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 py-1.5 px-2.5 rounded-xl transition flex items-center gap-1"
-                                                >
-                                                    <Plus size={13} /> Novo
-                                                </button>
-                                            </div>
-
-                                            {/* BANNER ROUND-UP (POUPANÇA AUTOMÁTICA DE TROCO / ACORNS) */}
-                                            <div className="mb-4 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/10 dark:from-amber-950/40 dark:via-orange-950/40 dark:to-amber-950/40 border border-amber-300 dark:border-amber-700/60 rounded-2xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center text-xl shrink-0 shadow-md shadow-amber-500/30">
-                                                        🪙
-                                                    </div>
-                                                    <div>
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-xs font-black text-slate-800 dark:text-white">Troco Automático (Round-Up)</span>
-                                                            <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-500 text-white">Efeito Acorns</span>
-                                                        </div>
-                                                        <p className="text-[11px] text-slate-600 dark:text-slate-300 font-medium mt-0.5">
-                                                            <strong className="text-amber-600 dark:text-amber-400">{formatCurrency(roundUpData.totalMonthly)}</strong> em centavos de {roundUpData.eligibleCount} compras • Projeção: <span className="font-bold">{formatCurrency(roundUpData.projectedAnnual)}/ano</span>
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                                {savingsGoals.length > 0 && (
-                                                    <button
-                                                        type="button"
-                                                        disabled={roundUpData.totalMonthly <= 0}
-                                                        onClick={() => handleDepositRoundUp(savingsGoals[0]?.id)}
-                                                        className="w-full sm:w-auto px-3.5 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 disabled:opacity-50 text-white text-xs font-black rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 shrink-0 active:scale-95"
-                                                    >
-                                                        📥 Guardar {formatCurrency(roundUpData.totalMonthly)}
-                                                    </button>
-                                                )}
-                                            </div>
-
-                                            <div className="space-y-3">
-                                                {savingsGoals.length === 0 ? (
-                                                    <div className="text-center py-6 text-slate-400 text-xs font-medium">
-                                                        Nenhum cofrinho criado ainda. Clique em "+ Novo" para planejar uma viagem, reserva ou sonho a dois!
-                                                    </div>
-                                                ) : (
-                                                    savingsGoals.map(goal => {
-                                                        const percent = Math.min(100, Math.round(((goal.currentAmount || 0) / (goal.targetAmount || 1)) * 100));
-                                                        const remaining = Math.max(0, (goal.targetAmount || 0) - (goal.currentAmount || 0));
-
-                                                        return (
-                                                            <div
-                                                                key={goal.id}
-                                                                className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 transition hover:border-amber-200 dark:hover:border-amber-900/50 group"
-                                                            >
-                                                                <div className="flex items-center justify-between mb-2">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className="text-xl">{goal.icon || '🎯'}</span>
-                                                                        <div>
-                                                                            <h4 className="text-xs font-black text-slate-800 dark:text-white leading-tight">{goal.title}</h4>
-                                                                            <p className="text-[10px] text-slate-400">
-                                                                                Meta: {formatCurrency(goal.targetAmount)} {goal.deadline ? `• até ${new Date(goal.deadline + 'T12:00:00').toLocaleDateString('pt-BR')}` : ''}
-                                                                            </p>
-                                                                        </div>
-                                                                    </div>
-                                                                    <div className="text-right">
-                                                                        <span className="text-xs font-black text-slate-900 dark:text-white">{formatCurrency(goal.currentAmount)}</span>
-                                                                        <span className="text-[10px] font-black text-amber-500 block">{percent}%</span>
-                                                                    </div>
-                                                                </div>
-
-                                                                {/* Barra de Progresso */}
-                                                                <div className="w-full bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden mb-2.5">
-                                                                    <div
-                                                                        className={`h-full rounded-full transition-all duration-500 bg-gradient-to-r ${goal.color || 'from-amber-500 to-orange-500'}`}
-                                                                        style={{ width: `${percent}%` }}
-                                                                    ></div>
-                                                                </div>
-
-                                                                <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800/60 text-[10px]">
-                                                                    <span className="text-slate-400 font-medium">
-                                                                        {remaining === 0 ? '🎉 Meta Conquistada!' : `Faltam ${formatCurrency(remaining)}`}
-                                                                    </span>
-                                                                    <div className="flex items-center gap-1.5">
-                                                                        <button
-                                                                            onClick={() => { setSelectedSavingsGoal(goal); setDepositActionType('deposit'); setSavingsDepositInput(''); setIsDepositModalOpen(true); }}
-                                                                            className="px-2 py-0.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 font-black hover:bg-emerald-200 transition"
-                                                                        >
-                                                                            + Guardar
-                                                                        </button>
-                                                                        <button
-                                                                            onClick={() => { setSelectedSavingsGoal(goal); setDepositActionType('withdraw'); setSavingsDepositInput(''); setIsDepositModalOpen(true); }}
-                                                                            className="px-2 py-0.5 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-black hover:bg-slate-300 transition"
-                                                                        >
-                                                                            Resgatar
-                                                                        </button>
-                                                                        <button
-                                                                            onClick={() => handleDeleteSavingsGoal(goal.id)}
-                                                                            className="p-1 text-slate-400 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition"
-                                                                            title="Excluir Cofrinho"
-                                                                        >
-                                                                            <Trash2 size={12} />
-                                                                        </button>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })
-                                                )}
                                             </div>
                                         </div>
 
@@ -5160,20 +5014,44 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                 {analysisView === 'assinaturas' && (
                                     <div className="space-y-6">
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-800">
-                                                <span className="text-[11px] font-black uppercase text-slate-400 block mb-1">Gasto Mensal Fixo</span>
-                                                <h3 className="text-2xl font-black text-rose-500">{formatCurrency(gastoMensalAssinaturas)}</h3>
-                                                <p className="text-xs text-slate-400 mt-1">Saindo todo mês de forma automática</p>
+                                            {/* Card 1: Assinaturas Digitais Reais (Streaming, Apps, etc.) */}
+                                            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-800 relative overflow-hidden">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <span className="text-[11px] font-black uppercase text-purple-600 dark:text-purple-400 flex items-center gap-1.5">
+                                                        <span>📺</span> Assinaturas Digitais
+                                                    </span>
+                                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950 text-purple-600 dark:text-purple-300">
+                                                        {assinaturasAtivas.length} ativas
+                                                    </span>
+                                                </div>
+                                                <h3 className="text-2xl font-black text-purple-600 dark:text-purple-400">{formatCurrency(gastoMensalAssinaturas)} <span className="text-xs text-slate-400 font-normal">/mês</span></h3>
+                                                <p className="text-xs text-slate-400 mt-1 font-medium">
+                                                    Netflix, Amazon, Apple, Apps • <span className="font-bold text-slate-600 dark:text-slate-300">{formatCurrency(gastoAnualAssinaturas)}/ano</span>
+                                                </p>
                                             </div>
-                                            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-800">
-                                                <span className="text-[11px] font-black uppercase text-slate-400 block mb-1">Custo Anual Projetado</span>
-                                                <h3 className="text-2xl font-black text-slate-800 dark:text-white">{formatCurrency(gastoAnualAssinaturas)}</h3>
-                                                <p className="text-xs text-slate-400 mt-1">Impacto anual no orçamento familiar</p>
+
+                                            {/* Card 2: Contas Fixas Recorrentes (Aluguel, Financiamentos, Seguros) */}
+                                            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-800 relative overflow-hidden">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <span className="text-[11px] font-black uppercase text-rose-500 flex items-center gap-1.5">
+                                                        <span>🏠</span> Contas Fixas & Moradia
+                                                    </span>
+                                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950 text-rose-600 dark:text-rose-300">
+                                                        {contasFixasRecorrentes.length} contas
+                                                    </span>
+                                                </div>
+                                                <h3 className="text-2xl font-black text-rose-500">{formatCurrency(gastoMensalContasFixas)} <span className="text-xs text-slate-400 font-normal">/mês</span></h3>
+                                                <p className="text-xs text-slate-400 mt-1 font-medium">
+                                                    Aluguel, Carro, Seguros, Luz • <span className="font-bold text-slate-600 dark:text-slate-300">{formatCurrency(gastoAnualContasFixas)}/ano</span>
+                                                </p>
                                             </div>
-                                            <div className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-3xl p-6 shadow-lg text-white flex flex-col justify-between">
+
+                                            {/* Card 3: Total Recorrente Mensal + Botão de Cadastro */}
+                                            <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-6 shadow-lg text-white flex flex-col justify-between border border-indigo-500/30">
                                                 <div>
-                                                    <span className="text-[11px] font-black uppercase text-amber-200 block mb-1">Contas & Contratos</span>
-                                                    <h3 className="text-2xl font-black">{repeatingRules.length} cadastradas</h3>
+                                                    <span className="text-[11px] font-black uppercase text-indigo-300 block mb-1">Total Recorrente Mensal</span>
+                                                    <h3 className="text-2xl font-black text-white">{formatCurrency(gastoMensalAssinaturas + gastoMensalContasFixas)} <span className="text-xs text-slate-400 font-normal">/mês</span></h3>
+                                                    <p className="text-xs text-slate-400 mt-0.5">{repeatingRules.length} contratos e serviços cadastrados</p>
                                                 </div>
                                                 <button
                                                     onClick={() => {
@@ -5193,48 +5071,48 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                         });
                                                         setIsFixedBillsModalOpen(true);
                                                     }}
-                                                    className="mt-3 w-full bg-white text-slate-900 hover:bg-amber-50 font-black py-2.5 px-4 rounded-xl text-xs transition shadow-sm flex items-center justify-center gap-1.5"
+                                                    className="mt-3 w-full bg-white text-slate-900 hover:bg-indigo-50 font-black py-2.5 px-4 rounded-xl text-xs transition shadow-sm flex items-center justify-center gap-1.5 active:scale-95"
                                                 >
-                                                    <Plus size={14} /> Nova Conta / Contrato
+                                                    <Plus size={14} /> Nova Conta / Assinatura
                                                 </button>
                                             </div>
                                         </div>
 
                                         <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-800">
-                                            <div className="flex justify-between items-center mb-6">
+                                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                                                 <div>
-                                                    <h3 className="text-base font-black text-slate-800 dark:text-white">Contas Fixas & Contratos com Vigência</h3>
-                                                    <p className="text-xs text-slate-400">Gerencie aluguéis, seguros com tempo determinado e assinaturas</p>
+                                                    <h3 className="text-base font-black text-slate-800 dark:text-white">Assinaturas e Contas Fixas Recorrentes</h3>
+                                                    <p className="text-xs text-slate-400">Separação clara entre assinaturas digitais (streaming/apps) e compromissos fixos (aluguel/carro/seguro)</p>
                                                 </div>
-                                                <button
-                                                    onClick={() => {
-                                                        setFixedBillEditing(null);
-                                                        setFixedBillForm({
-                                                            id: '',
-                                                            type: 'saida',
-                                                            amount: '',
-                                                            category: 'Casa',
-                                                            description: '',
-                                                            day: '1',
-                                                            accountId: 'acc_main',
-                                                            paidBy: 'conjunto',
-                                                            durationMode: 'indefinite',
-                                                            durationMonths: '4',
-                                                            startMonth: new Date().toISOString().slice(0, 7)
-                                                        });
-                                                        setIsFixedBillsModalOpen(true);
-                                                    }}
-                                                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center gap-1.5"
-                                                >
-                                                    <Plus size={14} /> Adicionar
-                                                </button>
+                                                
+                                                {/* Filtros em Abas */}
+                                                <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-2xl">
+                                                    <button
+                                                        onClick={() => setFixedBillsFilter('todos')}
+                                                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${fixedBillsFilter === 'todos' ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}
+                                                    >
+                                                        🌟 Todas ({repeatingRules.length})
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setFixedBillsFilter('assinaturas')}
+                                                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${fixedBillsFilter === 'assinaturas' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}
+                                                    >
+                                                        📺 Assinaturas ({assinaturasAtivas.length})
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setFixedBillsFilter('fixos')}
+                                                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${fixedBillsFilter === 'fixos' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}
+                                                    >
+                                                        🏠 Contas Fixas ({contasFixasRecorrentes.length})
+                                                    </button>
+                                                </div>
                                             </div>
 
                                             {repeatingRules.length === 0 ? (
                                                 <div className="text-center py-12 px-4 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
                                                     <Clock size={40} className="mx-auto text-slate-300 dark:text-slate-700 mb-3" />
-                                                    <p className="font-extrabold text-sm text-slate-700 dark:text-slate-300">Nenhuma conta fixa ou contrato cadastrado</p>
-                                                    <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1 mb-4">Cadastre seu aluguel contínuo, seguro do carro com vigência de 4 meses ou assinaturas de serviços.</p>
+                                                    <p className="font-extrabold text-sm text-slate-700 dark:text-slate-300">Nenhuma conta fixa ou assinatura cadastrada</p>
+                                                    <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1 mb-4">Cadastre seu aluguel, seguro de carro, contas fixas ou serviços de streaming.</p>
                                                     <button
                                                         onClick={() => {
                                                             setFixedBillEditing(null);
@@ -5255,12 +5133,19 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                         }}
                                                         className="px-4 py-2 bg-blue-600 text-white font-bold text-xs rounded-xl hover:bg-blue-700 transition"
                                                     >
-                                                        Cadastrar Primeira Conta Fixa
+                                                        Cadastrar Primeira Conta / Assinatura
                                                     </button>
                                                 </div>
                                             ) : (
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                    {repeatingRules.map(r => {
+                                                    {repeatingRules
+                                                        .filter(r => {
+                                                            if (fixedBillsFilter === 'assinaturas') return isRealSubscription(r);
+                                                            if (fixedBillsFilter === 'fixos') return !isRealSubscription(r);
+                                                            return true;
+                                                        })
+                                                        .map(r => {
+                                                        const isSub = isRealSubscription(r);
                                                         const validity = getRuleValidity(r);
                                                         const isExpiring = validity.isExpiringSoon;
                                                         const isExpired = validity.isExpired;
@@ -5282,7 +5167,16 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                                             {getCategoryIcon(r.category)}
                                                                         </div>
                                                                         <div>
-                                                                            <h4 className="font-extrabold text-slate-800 dark:text-white text-sm">{r.description}</h4>
+                                                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                                                <h4 className="font-extrabold text-slate-800 dark:text-white text-sm">{r.description}</h4>
+                                                                                <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                                                                                    isSub 
+                                                                                        ? 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300' 
+                                                                                        : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300'
+                                                                                }`}>
+                                                                                    {isSub ? '📺 Assinatura' : '🏠 Conta Fixa'}
+                                                                                </span>
+                                                                            </div>
                                                                             <span className="text-[11px] text-slate-400 font-medium">Vence todo dia {r.day} • {r.category}</span>
                                                                         </div>
                                                                     </div>
