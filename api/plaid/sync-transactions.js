@@ -50,25 +50,44 @@ export default async function handler(req, res) {
             });
         }
 
-        // Mapeia categorias do Plaid para as categorias do FinançasPro
-        const mapCategory = (plaidCat, name) => {
+        // Mapeia categorias do Plaid e regras inteligentes do negócio de limpeza
+        const mapCategoryAndBusiness = (plaidCat, name, type) => {
             const lowerName = (name || '').toLowerCase();
+
+            // 1. Regras Inteligentes para Cheques / Depósitos de Clientes de Limpeza
+            if (type === 'entrada') {
+                if (lowerName.includes('check') || lowerName.includes('deposit') || lowerName.includes('mobile') || lowerName.includes('remote') || lowerName.includes('atm') || lowerName.includes('clearing') || lowerName.includes('rdc') || lowerName.includes('cheque')) {
+                    return { category: 'Limpeza (Cheques Clientes)', isBusiness: true, paidBy: 'esposa' };
+                }
+            }
+
+            // 2. Regras Inteligentes para Pagamento de Ajudantes / Diárias (Zelle, Venmo, Transferências)
+            if (type === 'saida') {
+                if (lowerName.includes('zelle') || lowerName.includes('venmo') || lowerName.includes('cash app') || lowerName.includes('transfer') || lowerName.includes('diaria') || lowerName.includes('ajudante') || lowerName.includes('helper') || lowerName.includes('cleaner') || lowerName.includes('p2p')) {
+                    return { category: 'Ajudantes (Limpeza)', isBusiness: true, paidBy: 'esposa' };
+                }
+                if (lowerName.includes('home depot') || lowerName.includes('lowes') || lowerName.includes('cleaning supply') || lowerName.includes('janitorial') || lowerName.includes('vacuum') || lowerName.includes('limpeza')) {
+                    return { category: 'Materiais Limpeza', isBusiness: true, paidBy: 'esposa' };
+                }
+            }
+
+            // 3. Regras Padrão Pessoais
             if (lowerName.includes('walmart') || lowerName.includes('costco') || lowerName.includes('trader joe') || lowerName.includes('target') || lowerName.includes('publix') || lowerName.includes('whole foods') || lowerName.includes('aldi')) {
-                return 'Mercado';
+                return { category: 'Alimentação', isBusiness: false };
             }
-            if (lowerName.includes('gas') || lowerName.includes('chevron') || lowerName.includes('shell') || lowerName.includes('sunpass') || lowerName.includes('uber') || lowerName.includes('lyft')) {
-                return 'Transporte';
+            if (lowerName.includes('gas') || lowerName.includes('chevron') || lowerName.includes('shell') || lowerName.includes('sunpass') || lowerName.includes('uber') || lowerName.includes('lyft') || lowerName.includes('exxon') || lowerName.includes('bp ')) {
+                return { category: 'Transporte', isBusiness: false };
             }
-            if (lowerName.includes('restaurant') || lowerName.includes('starbucks') || lowerName.includes('mcdonald') || lowerName.includes('bakery') || lowerName.includes('coffee') || lowerName.includes('cafe')) {
-                return 'Alimentação';
+            if (lowerName.includes('restaurant') || lowerName.includes('starbucks') || lowerName.includes('mcdonald') || lowerName.includes('bakery') || lowerName.includes('coffee') || lowerName.includes('cafe') || lowerName.includes('dunkin') || lowerName.includes('chipotle') || lowerName.includes('burger')) {
+                return { category: 'Alimentação', isBusiness: false };
             }
-            if (lowerName.includes('netflix') || lowerName.includes('spotify') || lowerName.includes('disney') || lowerName.includes('gym') || lowerName.includes('cinema') || lowerName.includes('apple.com')) {
-                return 'Lazer';
+            if (lowerName.includes('netflix') || lowerName.includes('spotify') || lowerName.includes('disney') || lowerName.includes('gym') || lowerName.includes('cinema') || lowerName.includes('apple.com') || lowerName.includes('hulu') || lowerName.includes('max.com')) {
+                return { category: 'Lazer', isBusiness: false };
             }
-            if (lowerName.includes('pharmacy') || lowerName.includes('cvs') || lowerName.includes('walgreens') || lowerName.includes('doctor') || lowerName.includes('hospital')) {
-                return 'Saúde';
+            if (lowerName.includes('pharmacy') || lowerName.includes('cvs') || lowerName.includes('walgreens') || lowerName.includes('doctor') || lowerName.includes('hospital') || lowerName.includes('dental')) {
+                return { category: 'Saúde', isBusiness: false };
             }
-            return 'Outros';
+            return { category: type === 'entrada' ? 'Salário' : 'Casa', isBusiness: false };
         };
 
         // Formata as transações para a estrutura do FinançasPro
@@ -76,7 +95,7 @@ export default async function handler(req, res) {
             const amount = Math.abs(Number(tx.amount) || 0);
             // No Plaid: despesas têm valor positivo, entradas/depósitos têm valor negativo
             const type = tx.amount > 0 ? 'saida' : 'entrada';
-            const category = mapCategory(tx.personal_finance_category?.primary || tx.category?.[0], tx.merchant_name || tx.name);
+            const { category, isBusiness, paidBy: detectedPaidBy } = mapCategoryAndBusiness(tx.personal_finance_category?.primary || tx.category?.[0], tx.merchant_name || tx.name, type);
 
             return {
                 id: 'plaid_' + tx.transaction_id,
@@ -84,10 +103,11 @@ export default async function handler(req, res) {
                 amount: amount,
                 category: category,
                 date: tx.date || new Date().toISOString().split('T')[0],
-                description: tx.merchant_name || tx.name || 'Compra no Cartão',
+                description: tx.merchant_name || tx.name || (type === 'entrada' ? 'Depósito Bancário' : 'Compra / Transferência'),
                 status: tx.pending ? 'pendente' : 'pago',
-                accountId: 'acc_credit',
-                paidBy: owner,
+                accountId: 'acc_main',
+                paidBy: detectedPaidBy || owner,
+                isBusiness: isBusiness || false,
                 plaidTransactionId: tx.transaction_id,
                 plaidAccountId: tx.account_id
             };

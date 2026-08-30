@@ -26,8 +26,8 @@ import {
 
 // Configurações Base
 const baseCategories = {
-    entrada: ['Salário', 'Freelance', 'Rendimentos', 'Vendas', 'Outros'],
-    saida: ['Casa', 'Alimentação', 'Transporte', 'Lazer', 'Saúde', 'Educação', 'Assinaturas', 'Outros'],
+    entrada: ['Salário', 'Freelance', 'Rendimentos', 'Vendas', 'Limpeza (Cheques Clientes)', 'Outros'],
+    saida: ['Casa', 'Alimentação', 'Transporte', 'Lazer', 'Saúde', 'Educação', 'Assinaturas', 'Ajudantes (Limpeza)', 'Materiais Limpeza', 'Outros'],
     investimento: ['Renda Fixa', 'Ações', 'Cripto', 'Reserva de Emergência', 'Fundos Imobiliários']
 };
 
@@ -37,7 +37,16 @@ const baseCategoryColors = {
     'Assinaturas': '#ec4899', 'Outros': '#14b8a6',
     'Renda Fixa': '#10b981', 'Ações': '#6366f1', 'Cripto': '#f59e0b',
     'Reserva de Emergência': '#0ea5e9', 'Fundos Imobiliários': '#8b5cf6',
-    'Salário': '#22c55e', 'Freelance': '#84cc16', 'Rendimentos': '#10b981', 'Vendas': '#eab308'
+    'Salário': '#22c55e', 'Freelance': '#84cc16', 'Rendimentos': '#10b981', 'Vendas': '#eab308',
+    'Limpeza (Cheques Clientes)': '#10b981', 'Ajudantes (Limpeza)': '#8b5cf6', 'Materiais Limpeza': '#06b6d4'
+};
+
+export const isBusinessTx = (t) => {
+    if (!t) return false;
+    if (t.isBusiness) return true;
+    const cat = t.category || '';
+    const desc = (t.description || '').toLowerCase();
+    return cat.includes('Limpeza') || cat.includes('Ajudantes') || cat.includes('Materiais Limpeza') || desc.includes('ajudante') || desc.includes('diaria limpeza') || desc.includes('cheque limpeza');
 };
 
 const defaultAccounts = [
@@ -259,7 +268,8 @@ export default function App() {
         repeatDurationMode: 'indefinite', // 'indefinite' | 'fixed'
         repeatDurationMonths: '4',
         accountId: 'acc_main',
-        paidBy: 'conjunto' // 'marido' | 'esposa' | 'conjunto'
+        paidBy: 'conjunto', // 'marido' | 'esposa' | 'conjunto'
+        isBusiness: false
     });
 
     // 5.5 Estados para Gestão de Contas Fixas & Contratos com Vigência
@@ -1028,16 +1038,78 @@ export default function App() {
         };
     }, [selectedAccountObj, accountBalances, monthlyTransactions]);
 
-    const totals = useMemo(() => {
-        return monthlyTransactions.reduce((acc, curr) => {
-            if (curr.status === 'pago') {
-                if (curr.type === 'entrada') acc.receitas += curr.amount;
-                if (curr.type === 'saida') acc.despesas += curr.amount;
-                if (curr.type === 'investimento') acc.investimentos += curr.amount;
+    // 4. Apuração Financeira da Empresa de Limpeza (Business Hub)
+    const businessStats = useMemo(() => {
+        let grossRevenue = 0;
+        let helperPayouts = 0;
+        let materialsExpenses = 0;
+        let otherBusinessCosts = 0;
+        let count = 0;
+
+        monthlyTransactions.forEach(t => {
+            if (t.status !== 'pago') return;
+            if (isBusinessTx(t)) {
+                count++;
+                if (t.type === 'entrada') {
+                    grossRevenue += t.amount;
+                } else if (t.type === 'saida') {
+                    const cat = t.category || '';
+                    if (cat.includes('Ajudantes')) {
+                        helperPayouts += t.amount;
+                    } else if (cat.includes('Materiais')) {
+                        materialsExpenses += t.amount;
+                    } else {
+                        otherBusinessCosts += t.amount;
+                    }
+                }
             }
-            return acc;
-        }, { receitas: 0, despesas: 0, investimentos: 0 });
+        });
+
+        const totalExpenses = helperPayouts + materialsExpenses + otherBusinessCosts;
+        const netProfit = grossRevenue - totalExpenses;
+        const profitMargin = grossRevenue > 0 ? (netProfit / grossRevenue) * 100 : 0;
+
+        return {
+            grossRevenue,
+            helperPayouts,
+            materialsExpenses,
+            otherBusinessCosts,
+            totalExpenses,
+            netProfit,
+            profitMargin,
+            count,
+            hasBusinessActivity: count > 0 || grossRevenue > 0 || totalExpenses > 0
+        };
     }, [monthlyTransactions]);
+
+    const totals = useMemo(() => {
+        let personalReceitas = 0;
+        let personalDespesas = 0;
+        let personalInvestimentos = 0;
+
+        monthlyTransactions.forEach(curr => {
+            if (curr.status === 'pago') {
+                if (curr.type === 'investimento') {
+                    personalInvestimentos += curr.amount;
+                } else if (!isBusinessTx(curr)) {
+                    if (curr.type === 'entrada') personalReceitas += curr.amount;
+                    if (curr.type === 'saida') personalDespesas += curr.amount;
+                }
+            }
+        });
+
+        // Adiciona o Lucro Líquido Real da Empresa de Limpeza na renda pessoal da família
+        const finalReceitas = personalReceitas + (businessStats.netProfit > 0 ? businessStats.netProfit : 0);
+        const finalDespesas = personalDespesas + (businessStats.netProfit < 0 ? Math.abs(businessStats.netProfit) : 0);
+
+        return {
+            receitas: finalReceitas,
+            despesas: finalDespesas,
+            investimentos: personalInvestimentos,
+            rawPersonalReceitas: personalReceitas,
+            rawPersonalDespesas: personalDespesas
+        };
+    }, [monthlyTransactions, businessStats]);
 
     const monthlySummary = useMemo(() => {
         const receitas = totals.receitas;
@@ -1059,7 +1131,8 @@ export default function App() {
     }, [accountBalances]);
 
     const analysisData = useMemo(() => {
-        const expenses = monthlyTransactions.filter(t => t.type === 'saida' && t.status === 'pago');
+        // Apenas despesas pessoais do casal (não polui com repasse de ajudantes)
+        const expenses = monthlyTransactions.filter(t => t.type === 'saida' && t.status === 'pago' && !isBusinessTx(t));
         const grouped = expenses.reduce((acc, curr) => {
             const cat = curr.category || 'Outros';
             acc[cat] = (acc[cat] || 0) + curr.amount;
@@ -2282,7 +2355,8 @@ Estruture a resposta com tópicos claros usando emojis:
     // 2. DIVISÃO & ACERTO DE CONTAS DO CASAL E GRUPO
     // =========================================================================
     const coupleSplitData = useMemo(() => {
-        const expenses = monthlyTransactions.filter(t => t.type === 'saida' && t.status === 'pago');
+        // Exclui custos de negócio e repasse para ajudantes da divisão pessoal 50/50
+        const expenses = monthlyTransactions.filter(t => t.type === 'saida' && t.status === 'pago' && !isBusinessTx(t));
 
         let totalMarido = 0;
         let totalEsposa = 0;
@@ -3106,6 +3180,7 @@ Responda ESTRITAMENTE um objeto JSON no formato:
 
         if (editingId) {
             const existing = transactions.find(t => t.id === editingId);
+            const isBiz = formData.isBusiness || isBusinessTx({ category: formData.category, description: formData.description });
             const updated = {
                 ...existing,
                 type: formData.type,
@@ -3115,12 +3190,14 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                 description: formData.description.trim(),
                 status: formData.status,
                 accountId: formData.accountId,
-                paidBy: formData.paidBy || existing?.paidBy || 'conjunto'
+                paidBy: formData.paidBy || existing?.paidBy || 'conjunto',
+                isBusiness: isBiz
             };
             saveTransaction(updated);
             showToast('Registro editado com sucesso!');
         } else {
             const newId = 'tx_' + Date.now().toString();
+            const isBiz = formData.isBusiness || isBusinessTx({ category: formData.category, description: formData.description });
             const newT = {
                 id: newId,
                 type: formData.type,
@@ -3130,7 +3207,8 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                 description: formData.description.trim(),
                 status: formData.status,
                 accountId: formData.accountId,
-                paidBy: formData.paidBy || 'conjunto'
+                paidBy: formData.paidBy || 'conjunto',
+                isBusiness: isBiz
             };
 
             if (formData.isRepeating) {
@@ -3162,7 +3240,8 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                     paidBy: formData.paidBy || 'conjunto',
                     durationMonths: durMonths,
                     startDate: startDate,
-                    endDate: endDate
+                    endDate: endDate,
+                    isBusiness: isBiz
                 };
                 saveRule(newRule);
             }
@@ -3242,7 +3321,8 @@ Responda ESTRITAMENTE um objeto JSON no formato:
             repeatDurationMode: 'indefinite',
             repeatDurationMonths: '4',
             accountId: 'acc_main',
-            paidBy: 'conjunto'
+            paidBy: 'conjunto',
+            isBusiness: false
         });
         setIsFormOpen(true);
     };
@@ -3258,7 +3338,8 @@ Responda ESTRITAMENTE um objeto JSON no formato:
             status: transaction.status,
             isRepeating: false,
             accountId: transaction.accountId || 'acc_main',
-            paidBy: transaction.paidBy || 'conjunto'
+            paidBy: transaction.paidBy || 'conjunto',
+            isBusiness: transaction.isBusiness || isBusinessTx(transaction)
         });
         setIsFormOpen(true);
     };
@@ -4135,6 +4216,108 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                     {/* COLUNA ESQUERDA (65% width no desktop: 8 cols de 12) */}
                                     <div className="lg:col-span-7 xl:col-span-8 space-y-6">
 
+                                        {/* CARD DE APURAÇÃO DA EMPRESA DE LIMPEZA (BUSINESS HUB) */}
+                                        <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white border border-indigo-500/40 shadow-xl relative overflow-hidden">
+                                            {/* Glow decorativo de fundo */}
+                                            <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+                                            {/* Cabeçalho do Card */}
+                                            <div className="flex flex-wrap justify-between items-center gap-2 mb-4 relative z-10">
+                                                <div className="flex items-center gap-2.5">
+                                                    <div className="w-10 h-10 rounded-2xl bg-indigo-500/30 border border-indigo-400/40 flex items-center justify-center text-xl shadow-inner">
+                                                        🧹
+                                                    </div>
+                                                    <div>
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <h4 className="text-sm sm:text-base font-black text-white">
+                                                                Empresa de Limpeza • Apuração do Mês
+                                                            </h4>
+                                                            <span className="text-[10px] font-black bg-indigo-500/40 text-indigo-300 border border-indigo-400/50 px-2 py-0.5 rounded-full">
+                                                                PJ / Business
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-[11px] text-slate-400 font-medium">
+                                                            Separação inteligente: Cheques de clientes e diárias das ajudantes
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                <button
+                                                    onClick={() => {
+                                                        setFormData({
+                                                            type: 'entrada',
+                                                            amount: '',
+                                                            category: 'Limpeza (Cheques Clientes)',
+                                                            date: new Date().toISOString().split('T')[0],
+                                                            description: 'Depósito Cheque Cliente',
+                                                            status: 'pago',
+                                                            isRepeating: false,
+                                                            repeatDurationMode: 'indefinite',
+                                                            repeatDurationMonths: '4',
+                                                            accountId: 'acc_main',
+                                                            paidBy: 'esposa',
+                                                            isBusiness: true
+                                                        });
+                                                        setEditingId(null);
+                                                        setIsFormOpen(true);
+                                                    }}
+                                                    className="px-3 py-1.5 rounded-xl bg-indigo-600/40 hover:bg-indigo-600/60 text-indigo-200 border border-indigo-400/30 text-xs font-bold transition flex items-center gap-1.5 active:scale-95"
+                                                >
+                                                    <Plus size={14} /> Novo Lançamento
+                                                </button>
+                                            </div>
+
+                                            {/* Métricas do Negócio */}
+                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 relative z-10">
+                                                {/* 1. Faturamento Bruto */}
+                                                <div className="p-3.5 bg-slate-900/80 border border-slate-800 rounded-2xl">
+                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                                                        📥 Faturamento (Cheques)
+                                                    </span>
+                                                    <p className="text-base sm:text-lg font-black text-emerald-400">
+                                                        {formatCurrency(businessStats.grossRevenue)}
+                                                    </p>
+                                                    <span className="text-[9px] text-slate-500 font-bold block mt-0.5">
+                                                        Depósitos de clientes
+                                                    </span>
+                                                </div>
+
+                                                {/* 2. Repasse Meninas & Custos */}
+                                                <div className="p-3.5 bg-slate-900/80 border border-slate-800 rounded-2xl">
+                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                                                        👥 Repasse Ajudantes / Diárias
+                                                    </span>
+                                                    <p className="text-base sm:text-lg font-black text-rose-400">
+                                                        -{formatCurrency(businessStats.totalExpenses)}
+                                                    </p>
+                                                    <span className="text-[9px] text-slate-500 font-bold block mt-0.5">
+                                                        Zelle / pagamentos equipe
+                                                    </span>
+                                                </div>
+
+                                                {/* 3. Lucro Líquido Real */}
+                                                <div className="p-3.5 bg-indigo-950/70 border border-indigo-500/50 rounded-2xl shadow-inner">
+                                                    <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider block mb-1">
+                                                        💰 Lucro Líquido (Renda Real)
+                                                    </span>
+                                                    <p className={`text-base sm:text-lg font-black ${businessStats.netProfit >= 0 ? 'text-emerald-300' : 'text-rose-400'}`}>
+                                                        {formatCurrency(businessStats.netProfit)}
+                                                    </p>
+                                                    <span className="text-[9px] text-indigo-400 font-bold block mt-0.5">
+                                                        Margem: {businessStats.profitMargin.toFixed(0)}%
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            {/* Rodapé Informativo */}
+                                            <div className="mt-3.5 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-300">
+                                                <span className="flex items-center gap-1.5 text-indigo-300 font-semibold">
+                                                    <ShieldCheck size={14} className="text-emerald-400" />
+                                                    Apenas o Lucro Líquido de {formatCurrency(businessStats.netProfit > 0 ? businessStats.netProfit : 0)} entra na receita da família. Suas despesas do casal continuam 100% limpas!
+                                                </span>
+                                            </div>
+                                        </div>
+
                                         {/* Cartões de Contas Bancárias e Cartões */}
                                         <div>
                                             <div className="flex flex-wrap justify-between items-center gap-2 mb-3 px-1">
@@ -4477,6 +4660,11 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                                             {isFixedLinked && (
                                                                                 <span className="text-[9px] bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 px-1.5 py-0.2 rounded font-black uppercase tracking-wider">
                                                                                     Conta Fixa
+                                                                                </span>
+                                                                            )}
+                                                                            {isBusinessTx(transaction) && (
+                                                                                <span className="text-[9px] bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 px-1.5 py-0.2 rounded font-black uppercase tracking-wider flex items-center gap-0.5">
+                                                                                    🧹 Business
                                                                                 </span>
                                                                             )}
                                                                         </div>
@@ -6639,6 +6827,28 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                             <span>👥</span> <span>Casal</span>
                                         </button>
                                     </div>
+                                </div>
+
+                                <div>
+                                    <label className="flex items-center justify-between p-3.5 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 rounded-2xl cursor-pointer">
+                                        <div className="flex items-center gap-2.5">
+                                            <span className="text-lg">🧹</span>
+                                            <div>
+                                                <span className="text-xs font-extrabold text-indigo-950 dark:text-indigo-200 block">
+                                                    Transação da Empresa de Limpeza (Business)
+                                                </span>
+                                                <span className="text-[11px] text-indigo-600 dark:text-indigo-400">
+                                                    Cheque de cliente ou diária de ajudante (Não polui gastos do casal)
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.isBusiness || isBusinessTx({ category: formData.category, description: formData.description })}
+                                            onChange={(e) => setFormData({ ...formData, isBusiness: e.target.checked })}
+                                            className="w-5 h-5 rounded-lg border-indigo-300 text-indigo-600 cursor-pointer"
+                                        />
+                                    </label>
                                 </div>
 
                                 {formData.type !== 'investimento' && !editingId && (
