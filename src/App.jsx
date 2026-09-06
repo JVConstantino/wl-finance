@@ -1012,6 +1012,26 @@ export default function App() {
         return () => clearTimeout(timer);
     }, []);
 
+    // Ajuste inicial: contas futuras recorrentes geradas iniciam como 'pendente' para não negativar o saldo bancário antecipadamente
+    useEffect(() => {
+        const todayStr = new Date().toISOString().split('T')[0];
+        setTransactions(prev => {
+            let changed = false;
+            const updated = prev.map(t => {
+                if (t.isFromRepeatRule && t.type === 'saida' && t.status === 'pago' && t.date > todayStr && t.id.startsWith('tx_rep_')) {
+                    changed = true;
+                    return { ...t, status: 'pendente' };
+                }
+                return t;
+            });
+            if (changed) {
+                try { localStorage.setItem('fp_transactions', JSON.stringify(updated)); } catch(e){}
+                return updated;
+            }
+            return prev;
+        });
+    }, []);
+
     // Geração automática e garantia de persistência de gastos fixos / recorrentes (Aluguel, Seguro, etc.)
     useEffect(() => {
         if (!repeatingRules || repeatingRules.length === 0) return;
@@ -1049,7 +1069,7 @@ export default function App() {
                     category: rule.category,
                     date: txDate,
                     description: rule.description,
-                    status: 'pago',
+                    status: 'pendente', // Nasce como pendente: só abate do saldo da conta bancária após o pagamento real!
                     accountId: rule.accountId || 'acc_main',
                     paidBy: rule.paidBy || 'conjunto',
                     isFromRepeatRule: rule.id,
@@ -1222,37 +1242,52 @@ export default function App() {
     }, [monthlyTransactions]);
 
     const totals = useMemo(() => {
-        let personalReceitas = 0;
-        let personalDespesas = 0;
+        let personalReceitasPagas = 0;
+        let personalReceitasPendentes = 0;
+        let personalDespesasPagas = 0;
+        let personalDespesasPendentes = 0;
         let personalInvestimentos = 0;
 
         monthlyTransactions.forEach(curr => {
-            if (curr.status === 'pago') {
-                if (curr.type === 'investimento') {
-                    personalInvestimentos += curr.amount;
-                } else if (!isBusinessTx(curr)) {
-                    if (curr.type === 'entrada') personalReceitas += curr.amount;
-                    if (curr.type === 'saida') personalDespesas += curr.amount;
-                }
+            if (isBusinessTx(curr)) return;
+
+            if (curr.type === 'investimento') {
+                if (curr.status === 'pago') personalInvestimentos += curr.amount;
+            } else if (curr.type === 'entrada') {
+                if (curr.status === 'pago') personalReceitasPagas += curr.amount;
+                else personalReceitasPendentes += curr.amount;
+            } else if (curr.type === 'saida') {
+                if (curr.status === 'pago') personalDespesasPagas += curr.amount;
+                else personalDespesasPendentes += curr.amount;
             }
         });
 
         // Adiciona o Lucro Líquido Real da Empresa de Limpeza na renda pessoal da família
-        const finalReceitas = personalReceitas + (businessStats.netProfit > 0 ? businessStats.netProfit : 0);
-        const finalDespesas = personalDespesas + (businessStats.netProfit < 0 ? Math.abs(businessStats.netProfit) : 0);
+        const bizNet = businessStats.netProfit;
+        const finalReceitasPagas = personalReceitasPagas + (bizNet > 0 ? bizNet : 0);
+        const finalDespesasPagas = personalDespesasPagas + (bizNet < 0 ? Math.abs(bizNet) : 0);
+
+        const totalDespesasPrevistas = finalDespesasPagas + personalDespesasPendentes;
+        const totalReceitasPrevistas = finalReceitasPagas + personalReceitasPendentes;
 
         return {
-            receitas: finalReceitas,
-            despesas: finalDespesas,
+            receitas: finalReceitasPagas,
+            despesas: finalDespesasPagas,
             investimentos: personalInvestimentos,
-            rawPersonalReceitas: personalReceitas,
-            rawPersonalDespesas: personalDespesas
+            receitasPrevistas: totalReceitasPrevistas,
+            receitasPagas: finalReceitasPagas,
+            receitasPendentes: personalReceitasPendentes,
+            despesasPrevistas: totalDespesasPrevistas,
+            despesasPagas: finalDespesasPagas,
+            despesasPendentes: personalDespesasPendentes,
+            rawPersonalReceitas: personalReceitasPagas,
+            rawPersonalDespesas: personalDespesasPagas
         };
     }, [monthlyTransactions, businessStats]);
 
     const monthlySummary = useMemo(() => {
-        const receitas = totals.receitas;
-        const despesas = totals.despesas;
+        const receitas = totals.receitasPrevistas || totals.receitas;
+        const despesas = totals.despesasPrevistas || totals.despesas;
         const investimentos = totals.investimentos;
         const saldoLiquido = receitas - despesas - investimentos;
         const taxaPoupanca = receitas > 0 ? Math.max(0, ((receitas - despesas) / receitas) * 100) : 0;
@@ -1268,6 +1303,11 @@ export default function App() {
     const totalLiquidBalance = useMemo(() => {
         return Object.values(accountBalances).reduce((a, b) => a + b, 0);
     }, [accountBalances]);
+
+    // Saldo Projetado no Fim do Mês (Saldo hoje - Despesas que ainda faltam pagar + Receitas a receber)
+    const projectedEndMonthBalance = useMemo(() => {
+        return totalLiquidBalance - (totals.despesasPendentes || 0) + (totals.receitasPendentes || 0);
+    }, [totalLiquidBalance, totals]);
 
     const analysisData = useMemo(() => {
         // Apenas despesas pessoais do casal (não polui com repasse de ajudantes)
@@ -3302,7 +3342,7 @@ Responda ESTRITAMENTE um objeto JSON no formato:
             category: ruleData.category,
             date: txDate,
             description: ruleData.description,
-            status: 'pago',
+            status: 'pendente', // Inicia como pendente (a pagar) para não debitar da conta antes do pagamento real
             accountId: ruleData.accountId || 'acc_main',
             paidBy: ruleData.paidBy || 'conjunto',
             isFromRepeatRule: ruleData.id,
@@ -4338,10 +4378,16 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                             {/* Card 1: Saldo Geral */}
                             <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
                                 <div>
-                                    <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Saldo Geral Líquido</p>
+                                    <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Saldo em Conta (Hoje)</p>
                                     <h3 className={`text-lg sm:text-xl font-black ${totalLiquidBalance >= 0 ? 'text-slate-900 dark:text-white' : 'text-rose-600 dark:text-rose-400'}`}>
                                         {formatCurrency(totalLiquidBalance)}
                                     </h3>
+                                    <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1">
+                                        <span>Fim do mês:</span>
+                                        <span className={`font-black ${projectedEndMonthBalance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                                            {formatCurrency(projectedEndMonthBalance)}
+                                        </span>
+                                    </p>
                                 </div>
                                 <div className="p-3 bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 rounded-2xl shrink-0">
                                     <Wallet size={22} />
@@ -4353,8 +4399,14 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                 <div>
                                     <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Receitas do Mês</p>
                                     <h3 className="text-lg sm:text-xl font-black text-emerald-600 dark:text-emerald-400">
-                                        {formatCurrency(totals.receitas)}
+                                        {formatCurrency(totals.receitasPrevistas || totals.receitas)}
                                     </h3>
+                                    <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-1">
+                                        Recebido: <span className="text-emerald-600 dark:text-emerald-400 font-black">{formatCurrency(totals.receitasPagas)}</span>
+                                        {totals.receitasPendentes > 0 && (
+                                            <span className="text-slate-400 font-medium"> • A receber: {formatCurrency(totals.receitasPendentes)}</span>
+                                        )}
+                                    </p>
                                 </div>
                                 <div className="p-3 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 rounded-2xl shrink-0">
                                     <ArrowUp size={22} />
@@ -4366,8 +4418,14 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                 <div>
                                     <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Despesas do Mês</p>
                                     <h3 className="text-lg sm:text-xl font-black text-rose-600 dark:text-rose-400">
-                                        {formatCurrency(totals.despesas)}
+                                        {formatCurrency(totals.despesasPrevistas || totals.despesas)}
                                     </h3>
+                                    <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-1">
+                                        Pagas: <span className="text-rose-600 dark:text-rose-400 font-black">{formatCurrency(totals.despesasPagas)}</span>
+                                        {totals.despesasPendentes > 0 && (
+                                            <span className="text-amber-600 dark:text-amber-400 font-bold"> • A vencer: {formatCurrency(totals.despesasPendentes)}</span>
+                                        )}
+                                    </p>
                                 </div>
                                 <div className="p-3 bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 rounded-2xl shrink-0">
                                     <ArrowDown size={22} />
@@ -4381,6 +4439,9 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                     <h3 className="text-lg sm:text-xl font-black text-indigo-600 dark:text-indigo-400">
                                         {formatCurrency(totals.investimentos)}
                                     </h3>
+                                    <p className="text-[10px] font-bold text-slate-400 mt-1">
+                                        {totals.receitasPrevistas > 0 ? `${((totals.investimentos / totals.receitasPrevistas) * 100).toFixed(0)}% da renda prevista` : 'Investimentos'}
+                                    </p>
                                 </div>
                                 <div className="p-3 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 rounded-2xl shrink-0">
                                     <TrendingUp size={22} />
@@ -4879,9 +4940,24 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                                         </p>
                                                                         <button
                                                                             onClick={() => toggleStatus(transaction.id)}
-                                                                            className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded mt-0.5 inline-flex items-center gap-1 ${transaction.status === 'pago' ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/50' : 'text-amber-600 bg-amber-50 dark:bg-amber-950/50'}`}
+                                                                            title={transaction.status === 'pago' ? 'Clique para reabrir como A Pagar' : 'Clique para marcar como Pago'}
+                                                                            className={`text-[10px] font-black px-2 py-0.5 rounded-full mt-1 inline-flex items-center gap-1 transition-all active:scale-95 border ${
+                                                                                transaction.status === 'pago'
+                                                                                    ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
+                                                                                    : 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 border-amber-200 dark:border-amber-800 hover:bg-amber-100 shadow-xs'
+                                                                            }`}
                                                                         >
-                                                                            {transaction.status === 'pago' ? 'Pago' : 'Pendente'}
+                                                                            {transaction.status === 'pago' ? (
+                                                                                <>
+                                                                                    <CheckCircle2 size={11} className="text-emerald-600 dark:text-emerald-400" />
+                                                                                    <span>Pago</span>
+                                                                                </>
+                                                                            ) : (
+                                                                                <>
+                                                                                    <Clock size={11} className="text-amber-600 dark:text-amber-400" />
+                                                                                    <span>A Pagar</span>
+                                                                                </>
+                                                                            )}
                                                                         </button>
                                                                     </div>
 
