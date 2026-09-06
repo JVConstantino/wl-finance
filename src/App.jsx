@@ -251,7 +251,14 @@ export default function App() {
     const [selectedDay, setSelectedDay] = useState(new Date().getDate());
     const [searchQuery, setSearchQuery] = useState('');
     const [filterType, setFilterType] = useState('todos');
+    const [businessFilter, setBusinessFilter] = useState('todos'); // 'todos' | 'empresa' | 'pessoal'
     const [selectedAccountId, setSelectedAccountId] = useState('todos');
+
+    // Estados para Resumo WhatsApp e Backup
+    const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
+    const [copiedWhatsApp, setCopiedWhatsApp] = useState(false);
+    const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
+    const backupFileInputRef = useRef(null);
 
     // 3. Modais e Formulários
     const [isFormOpen, setIsFormOpen] = useState(false);
@@ -1153,6 +1160,20 @@ export default function App() {
         }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }, [transactions, currentDate]);
 
+    const businessCounts = useMemo(() => {
+        let empresa = 0;
+        let pessoal = 0;
+        monthlyTransactions.forEach(t => {
+            if (isBusinessTx(t)) empresa++;
+            else pessoal++;
+        });
+        return {
+            todos: monthlyTransactions.length,
+            empresa,
+            pessoal
+        };
+    }, [monthlyTransactions]);
+
     const filteredAndSearchedTransactions = useMemo(() => {
         return monthlyTransactions.filter(t => {
             const desc = t.description || '';
@@ -1169,9 +1190,13 @@ export default function App() {
                 accountMatch = t.accountId === selectedAccountId || t.sourceAccountId === selectedAccountId || t.targetAccountId === selectedAccountId;
             }
 
-            return searchMatch && filterMatch && accountMatch;
+            let businessMatch = true;
+            if (businessFilter === 'empresa') businessMatch = isBusinessTx(t);
+            if (businessFilter === 'pessoal') businessMatch = !isBusinessTx(t);
+
+            return searchMatch && filterMatch && accountMatch && businessMatch;
         });
-    }, [monthlyTransactions, searchQuery, filterType, selectedAccountId]);
+    }, [monthlyTransactions, searchQuery, filterType, selectedAccountId, businessFilter]);
 
     const selectedAccountObj = useMemo(() => {
         if (!selectedAccountId || selectedAccountId === 'todos') return null;
@@ -3561,6 +3586,142 @@ Responda ESTRITAMENTE um objeto JSON no formato:
         }
     };
 
+    const getWhatsAppMessage = () => {
+        const monthName = currentDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+        const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+        const balanceTotal = Object.entries(accountBalances).reduce((sum, [accId, bal]) => {
+            const acc = accounts.find(a => a.id === accId);
+            if (acc && acc.type !== 'credito') return sum + bal;
+            return sum;
+        }, 0);
+
+        let msg = `📊 *FINANÇAS DO CASAL • ${capitalizedMonth.toUpperCase()}*\n\n`;
+        msg += `💵 *Saldo Atual em Contas:* ${formatCurrency(balanceTotal)}\n`;
+        msg += `📥 *Receitas do Mês:* ${formatCurrency(totals.receitas)}\n`;
+        msg += `📤 *Despesas Pagas:* ${formatCurrency(totals.despesas)}\n`;
+        if (totals.despesasPendentes > 0) {
+            msg += `⏳ *Contas a Vencer:* ${formatCurrency(totals.despesasPendentes)}\n`;
+        }
+        msg += `\n🧹 *EMPRESA DE LIMPEZA (PJ)*\n`;
+        msg += `• Faturamento (Cheques): ${formatCurrency(businessStats.grossRevenue)}\n`;
+        msg += `• Repasse Ajudantes/Custos: -${formatCurrency(businessStats.totalExpenses)}\n`;
+        msg += `• *Lucro Líquido Real:* ${formatCurrency(businessStats.netProfit)}\n`;
+        msg += `\n✨ _Gerado via FinançasPro Inteligente_`;
+        return msg;
+    };
+
+    const handleCopyWhatsApp = () => {
+        const text = getWhatsAppMessage();
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text);
+        } else {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+        }
+        setCopiedWhatsApp(true);
+        showToast("Texto copiado para a área de transferência!");
+        setTimeout(() => setCopiedWhatsApp(false), 2500);
+    };
+
+    const handleOpenWhatsApp = () => {
+        const text = getWhatsAppMessage();
+        const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+        window.open(url, '_blank');
+        setIsWhatsAppModalOpen(false);
+    };
+
+    const handleExportBackup = () => {
+        try {
+            const backupData = {
+                appName: "FinancasPro",
+                version: "2.0",
+                exportedAt: new Date().toISOString(),
+                transactions,
+                repeatingRules,
+                accounts,
+                monthlyGoals,
+                customCategories,
+                savingsGoals,
+                shoppingItems,
+                financings,
+                carExtraCosts,
+                connectedCards
+            };
+            const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const dateStr = new Date().toISOString().split('T')[0];
+            a.href = url;
+            a.download = `backup_financaspro_${dateStr}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast("Backup JSON exportado com sucesso!");
+        } catch (err) {
+            showToast("Erro ao exportar backup.");
+        }
+    };
+
+    const handleImportBackup = (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const data = JSON.parse(event.target.result);
+                if (!data || (!data.transactions && !data.accounts)) {
+                    showToast("Arquivo de backup inválido.");
+                    return;
+                }
+                if (Array.isArray(data.transactions)) {
+                    setTransactions(data.transactions);
+                    localStorage.setItem('fp_transactions', JSON.stringify(data.transactions));
+                }
+                if (Array.isArray(data.repeatingRules)) {
+                    setRepeatingRules(data.repeatingRules);
+                    localStorage.setItem('fp_rules', JSON.stringify(data.repeatingRules));
+                }
+                if (Array.isArray(data.accounts)) {
+                    setAccounts(data.accounts);
+                    localStorage.setItem('fp_accounts', JSON.stringify(data.accounts));
+                }
+                if (data.monthlyGoals && typeof data.monthlyGoals === 'object') {
+                    setMonthlyGoals(data.monthlyGoals);
+                    localStorage.setItem('fp_goals', JSON.stringify(data.monthlyGoals));
+                }
+                if (Array.isArray(data.customCategories)) {
+                    setCustomCategories(data.customCategories);
+                    localStorage.setItem('fp_custom_categories', JSON.stringify(data.customCategories));
+                }
+                if (Array.isArray(data.savingsGoals)) {
+                    setSavingsGoals(data.savingsGoals);
+                    localStorage.setItem('fp_savings_goals', JSON.stringify(data.savingsGoals));
+                }
+                if (Array.isArray(data.shoppingItems)) {
+                    setShoppingItems(data.shoppingItems);
+                    localStorage.setItem('fp_shopping_items', JSON.stringify(data.shoppingItems));
+                }
+                if (Array.isArray(data.financings)) {
+                    setFinancings(data.financings);
+                    localStorage.setItem('fp_financings', JSON.stringify(data.financings));
+                }
+                if (data.carExtraCosts) {
+                    setCarExtraCosts(data.carExtraCosts);
+                    localStorage.setItem('fp_car_extra_costs', JSON.stringify(data.carExtraCosts));
+                }
+                setIsBackupModalOpen(false);
+                showToast("Backup restaurado com sucesso!");
+            } catch (err) {
+                showToast("Erro ao processar arquivo de backup.");
+            }
+        };
+        reader.readAsText(file);
+        e.target.value = '';
+    };
+
     const openNewForm = (presetType = 'saida') => {
         setEditingId(null);
         setFormData({
@@ -3844,6 +4005,16 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                             </button>
 
                             <button
+                                onClick={() => setIsBackupModalOpen(true)}
+                                className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <Database size={16} className="text-cyan-500" /> Backup & Restauração
+                                </div>
+                                <span className="text-[10px] bg-cyan-100 dark:bg-cyan-950/60 text-cyan-600 dark:text-cyan-400 px-2 py-0.5 rounded-full font-extrabold">JSON</span>
+                            </button>
+
+                            <button
                                 onClick={handleResetAllData}
                                 className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl font-bold text-xs text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
                             >
@@ -3998,6 +4169,13 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                             </span>
                                         )}
                                     </button>
+                                    <button
+                                        onClick={() => setIsWhatsAppModalOpen(true)}
+                                        className="p-2 bg-emerald-500/30 hover:bg-emerald-500/40 text-emerald-200 rounded-full text-xs font-bold flex items-center justify-center transition backdrop-blur-md border border-emerald-400/40"
+                                        title="Resumo para WhatsApp"
+                                    >
+                                        <Share2 size={17} />
+                                    </button>
                                     {isInstallable && (
                                         <button
                                             onClick={handleInstallPWA}
@@ -4047,6 +4225,15 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                     title="Relatório Executivo PDF / Impressão"
                                 >
                                     <FileDown size={16} className="text-emerald-300" /> Relatório PDF
+                                </button>
+
+                                {/* Botão Resumo WhatsApp Desktop */}
+                                <button
+                                    onClick={() => setIsWhatsAppModalOpen(true)}
+                                    className="hidden sm:flex items-center gap-2 bg-emerald-500/25 hover:bg-emerald-500/40 backdrop-blur-md px-3.5 py-2.5 rounded-2xl text-xs font-extrabold border border-emerald-400/40 transition shadow-sm text-emerald-100 hover:text-white"
+                                    title="Resumo Formatado para WhatsApp"
+                                >
+                                    <Share2 size={16} className="text-emerald-300" /> Resumo WhatsApp
                                 </button>
 
                                 {/* Botão Lista de Mercado Desktop */}
@@ -4260,6 +4447,12 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                         className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
                                     >
                                         <Key size={16} className="text-indigo-500" /> Chave Gemini IA
+                                    </button>
+                                    <button
+                                        onClick={() => { setShowProfileMenu(false); setIsBackupModalOpen(true); }}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                                    >
+                                        <Database size={16} className="text-cyan-500" /> Backup & Restauração
                                     </button>
                                 </div>
 
@@ -4751,6 +4944,47 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                             {acc.type === 'banco' ? '🏛️' : acc.type === 'credito' ? '💳' : '💵'} {acc.name}
                                                         </button>
                                                     ))}
+                                                </div>
+
+                                                {/* Filtro Rápido de Origem: Todos vs Empresa de Limpeza vs Casal/Pessoal */}
+                                                <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+                                                    <button
+                                                        onClick={() => setBusinessFilter('todos')}
+                                                        className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                                                            businessFilter === 'todos'
+                                                                ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm'
+                                                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                                        }`}
+                                                    >
+                                                        <span>🌟 Todos</span>
+                                                        <span className="text-[10px] opacity-75 font-black">({businessCounts.todos})</span>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setBusinessFilter('empresa')}
+                                                        className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                                                            businessFilter === 'empresa'
+                                                                ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
+                                                                : 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50'
+                                                        }`}
+                                                    >
+                                                        <span>🧹 Empresa de Limpeza</span>
+                                                        <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${businessFilter === 'empresa' ? 'bg-white/25 text-white' : 'bg-indigo-200/60 dark:bg-indigo-900/80 text-indigo-800 dark:text-indigo-200'}`}>
+                                                            {businessCounts.empresa}
+                                                        </span>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setBusinessFilter('pessoal')}
+                                                        className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                                                            businessFilter === 'pessoal'
+                                                                ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/30'
+                                                                : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
+                                                        }`}
+                                                    >
+                                                        <span>🏠 Casal / Pessoal</span>
+                                                        <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${businessFilter === 'pessoal' ? 'bg-white/25 text-white' : 'bg-emerald-200/60 dark:bg-emerald-900/80 text-emerald-800 dark:text-emerald-200'}`}>
+                                                            {businessCounts.pessoal}
+                                                        </span>
+                                                    </button>
                                                 </div>
 
                                                 {/* Seletor de Tipo (Receitas, Despesas, etc.) */}
@@ -6984,6 +7218,178 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                 {/* ==================================================== */}
                 {/* MODAIS (FORMULÁRIOS, FATURA, METAS, ETC.) */}
                 {/* ==================================================== */}
+                {/* Modal de Resumo Formatado para WhatsApp */}
+                {isWhatsAppModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsWhatsAppModalOpen(false)}></div>
+                        <div className="relative bg-white dark:bg-slate-900 w-full max-w-lg rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 duration-200 border border-slate-100 dark:border-slate-800 z-10 flex flex-col max-h-[90vh]">
+                            <div className="flex justify-between items-center mb-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-inner">
+                                        <Share2 size={20} />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-base font-black text-slate-800 dark:text-white">
+                                            Resumo para WhatsApp
+                                        </h3>
+                                        <p className="text-xs text-slate-400 font-medium">
+                                            Compartilhe o fechamento do mês com 1 clique
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setIsWhatsAppModalOpen(false)}
+                                    className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto my-2">
+                                <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-200/70 dark:border-slate-800 font-mono text-xs text-slate-700 dark:text-slate-300 whitespace-pre-line leading-relaxed shadow-inner">
+                                    {getWhatsAppMessage()}
+                                </div>
+                            </div>
+
+                            <div className="flex gap-3 pt-4 border-t border-slate-100 dark:border-slate-800 mt-2">
+                                <button
+                                    type="button"
+                                    onClick={handleCopyWhatsApp}
+                                    className={`flex-1 py-3 px-4 rounded-2xl text-xs font-extrabold flex items-center justify-center gap-2 transition active:scale-95 ${
+                                        copiedWhatsApp
+                                            ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-300'
+                                            : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
+                                    }`}
+                                >
+                                    {copiedWhatsApp ? <Check size={16} className="text-emerald-600" /> : <Copy size={16} />}
+                                    {copiedWhatsApp ? 'Copiado com Sucesso!' : 'Copiar Texto'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleOpenWhatsApp}
+                                    className="flex-1 py-3 px-4 rounded-2xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition active:scale-95"
+                                >
+                                    <Send size={16} /> Abrir no WhatsApp
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Modal de Backup & Restauração de Dados */}
+                {isBackupModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsBackupModalOpen(false)}></div>
+                        <div className="relative bg-white dark:bg-slate-900 w-full max-w-md rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 duration-200 border border-slate-100 dark:border-slate-800 z-10">
+                            <div className="flex justify-between items-center mb-5">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-2xl bg-cyan-50 dark:bg-cyan-950/60 text-cyan-600 dark:text-cyan-400 flex items-center justify-center shadow-inner">
+                                        <Database size={20} />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-base font-black text-slate-800 dark:text-white">
+                                            Backup & Restauração
+                                        </h3>
+                                        <p className="text-xs text-slate-400 font-medium">
+                                            Proteja e sincronize seus lançamentos
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setIsBackupModalOpen(false)}
+                                    className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+
+                            {/* Input oculto para selecionar arquivo JSON */}
+                            <input
+                                type="file"
+                                ref={backupFileInputRef}
+                                accept=".json"
+                                onChange={handleImportBackup}
+                                className="hidden"
+                            />
+
+                            <div className="space-y-3">
+                                {/* Card 1: Baixar Backup JSON */}
+                                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/50 flex flex-col justify-between gap-3">
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <DownloadCloud size={18} className="text-cyan-600 dark:text-cyan-400" />
+                                            <h4 className="text-xs font-black text-slate-800 dark:text-white">
+                                                Fazer Backup Completo (JSON)
+                                            </h4>
+                                        </div>
+                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-normal">
+                                            Salva todos os seus lançamentos, contas, regras fixas, cofrinhos e metas em um arquivo seguro no seu aparelho.
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={handleExportBackup}
+                                        className="w-full py-2.5 px-3 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm shadow-cyan-600/20 active:scale-95"
+                                    >
+                                        <Download size={14} /> Baixar Arquivo JSON
+                                    </button>
+                                </div>
+
+                                {/* Card 2: Restaurar Backup JSON */}
+                                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/50 flex flex-col justify-between gap-3">
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <UploadCloud size={18} className="text-emerald-600 dark:text-emerald-400" />
+                                            <h4 className="text-xs font-black text-slate-800 dark:text-white">
+                                                Restaurar Cópia de Segurança
+                                            </h4>
+                                        </div>
+                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-normal">
+                                            Selecione um arquivo de backup (.json) salvo anteriormente para restaurar todas as suas finanças.
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (backupFileInputRef.current) {
+                                                backupFileInputRef.current.click();
+                                            }
+                                        }}
+                                        className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm shadow-emerald-600/20 active:scale-95"
+                                    >
+                                        <UploadCloud size={14} /> Selecionar Arquivo JSON
+                                    </button>
+                                </div>
+
+                                {/* Card 3: Exportar Planilha CSV */}
+                                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/50 flex flex-col justify-between gap-3">
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <FileText size={18} className="text-blue-600 dark:text-blue-400" />
+                                            <h4 className="text-xs font-black text-slate-800 dark:text-white">
+                                                Exportar Extrato em Planilha
+                                            </h4>
+                                        </div>
+                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-normal">
+                                            Baixe a planilha do mês atual compatível com Microsoft Excel e Google Sheets.
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            exportToCSV();
+                                            setIsBackupModalOpen(false);
+                                        }}
+                                        className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold transition flex items-center justify-center gap-2 active:scale-95"
+                                    >
+                                        <DownloadCloud size={14} /> Baixar CSV / Excel
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Modal Confirmação de Exclusão de Lançamento */}
                 {transactionToDelete && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
