@@ -4633,109 +4633,7 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                             </div>
                                         </div>
 
-                                        {/* 2. CARD DE APURAÇÃO DA EMPRESA DE LIMPEZA (LOGO ABAIXO DAS CONTAS) */}
-                                        <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white border border-indigo-500/40 shadow-xl relative overflow-hidden">
-                                            {/* Glow decorativo de fundo */}
-                                            <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
-
-                                            {/* Cabeçalho do Card */}
-                                            <div className="flex flex-wrap justify-between items-center gap-2 mb-4 relative z-10">
-                                                <div className="flex items-center gap-2.5">
-                                                    <div className="w-10 h-10 rounded-2xl bg-indigo-500/30 border border-indigo-400/40 flex items-center justify-center text-xl shadow-inner">
-                                                        🧹
-                                                    </div>
-                                                    <div>
-                                                        <div className="flex items-center gap-2 flex-wrap">
-                                                            <h4 className="text-sm sm:text-base font-black text-white">
-                                                                Empresa de Limpeza • Apuração do Mês
-                                                            </h4>
-                                                            <span className="text-[10px] font-black bg-indigo-500/40 text-indigo-300 border border-indigo-400/50 px-2 py-0.5 rounded-full">
-                                                                PJ / Business
-                                                            </span>
-                                                        </div>
-                                                        <p className="text-[11px] text-slate-400 font-medium">
-                                                            Separação inteligente: Cheques de clientes e diárias das ajudantes
-                                                        </p>
-                                                    </div>
-                                                </div>
-
-                                                <button
-                                                    onClick={() => {
-                                                        setFormData({
-                                                            type: 'entrada',
-                                                            amount: '',
-                                                            category: 'Limpeza (Cheques Clientes)',
-                                                            date: new Date().toISOString().split('T')[0],
-                                                            description: 'Depósito Cheque Cliente',
-                                                            status: 'pago',
-                                                            isRepeating: false,
-                                                            repeatDurationMode: 'indefinite',
-                                                            repeatDurationMonths: '4',
-                                                            accountId: 'acc_main',
-                                                            paidBy: 'esposa',
-                                                            isBusiness: true
-                                                        });
-                                                        setEditingId(null);
-                                                        setIsFormOpen(true);
-                                                    }}
-                                                    className="px-3 py-1.5 rounded-xl bg-indigo-600/40 hover:bg-indigo-600/60 text-indigo-200 border border-indigo-400/30 text-xs font-bold transition flex items-center gap-1.5 active:scale-95"
-                                                >
-                                                    <Plus size={14} /> Novo Lançamento
-                                                </button>
-                                            </div>
-
-                                            {/* Métricas do Negócio */}
-                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 relative z-10">
-                                                {/* 1. Faturamento Bruto */}
-                                                <div className="p-3.5 bg-slate-900/80 border border-slate-800 rounded-2xl">
-                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                                                        📥 Faturamento (Cheques)
-                                                    </span>
-                                                    <p className="text-base sm:text-lg font-black text-emerald-400">
-                                                        {formatCurrency(businessStats.grossRevenue)}
-                                                    </p>
-                                                    <span className="text-[9px] text-slate-500 font-bold block mt-0.5">
-                                                        Depósitos de clientes
-                                                    </span>
-                                                </div>
-
-                                                {/* 2. Repasse Meninas & Custos */}
-                                                <div className="p-3.5 bg-slate-900/80 border border-slate-800 rounded-2xl">
-                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                                                        👥 Repasse Ajudantes / Diárias
-                                                    </span>
-                                                    <p className="text-base sm:text-lg font-black text-rose-400">
-                                                        -{formatCurrency(businessStats.totalExpenses)}
-                                                    </p>
-                                                    <span className="text-[9px] text-slate-500 font-bold block mt-0.5">
-                                                        Zelle / pagamentos equipe
-                                                    </span>
-                                                </div>
-
-                                                {/* 3. Lucro Líquido Real */}
-                                                <div className="p-3.5 bg-indigo-950/70 border border-indigo-500/50 rounded-2xl shadow-inner">
-                                                    <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider block mb-1">
-                                                        💰 Lucro Líquido (Renda Real)
-                                                    </span>
-                                                    <p className={`text-base sm:text-lg font-black ${businessStats.netProfit >= 0 ? 'text-emerald-300' : 'text-rose-400'}`}>
-                                                        {formatCurrency(businessStats.netProfit)}
-                                                    </p>
-                                                    <span className="text-[9px] text-indigo-400 font-bold block mt-0.5">
-                                                        Margem: {businessStats.profitMargin.toFixed(0)}%
-                                                    </span>
-                                                </div>
-                                            </div>
-
-                                            {/* Rodapé Informativo */}
-                                            <div className="mt-3.5 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-300">
-                                                <span className="flex items-center gap-1.5 text-indigo-300 font-semibold">
-                                                    <ShieldCheck size={14} className="text-emerald-400" />
-                                                    Apenas o Lucro Líquido de {formatCurrency(businessStats.netProfit > 0 ? businessStats.netProfit : 0)} entra na receita da família. Suas despesas do casal continuam 100% limpas!
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        {/* 3. TABELA / LISTA DE LANÇAMENTOS RECENTES (EXTRATO) */}
+                                        {/* 2. TABELA / LISTA DE LANÇAMENTOS RECENTES (EXTRATO) */}
                                         <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-100 dark:border-slate-800/80">
                                             
                                             {/* Spotlight / Detalhes da Conta Selecionada */}
@@ -5015,6 +4913,108 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                                         );
                                                     })
                                                 )}
+                                            </div>
+                                        </div>
+
+                                        {/* 3. CARD DE APURAÇÃO DA EMPRESA DE LIMPEZA (LOGO ABAIXO DO EXTRATO) */}
+                                        <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white border border-indigo-500/40 shadow-xl relative overflow-hidden">
+                                            {/* Glow decorativo de fundo */}
+                                            <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+                                            {/* Cabeçalho do Card */}
+                                            <div className="flex flex-wrap justify-between items-center gap-2 mb-4 relative z-10">
+                                                <div className="flex items-center gap-2.5">
+                                                    <div className="w-10 h-10 rounded-2xl bg-indigo-500/30 border border-indigo-400/40 flex items-center justify-center text-xl shadow-inner">
+                                                        🧹
+                                                    </div>
+                                                    <div>
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <h4 className="text-sm sm:text-base font-black text-white">
+                                                                Empresa de Limpeza • Apuração do Mês
+                                                            </h4>
+                                                            <span className="text-[10px] font-black bg-indigo-500/40 text-indigo-300 border border-indigo-400/50 px-2 py-0.5 rounded-full">
+                                                                PJ / Business
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-[11px] text-slate-400 font-medium">
+                                                            Separação inteligente: Cheques de clientes e diárias das ajudantes
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                <button
+                                                    onClick={() => {
+                                                        setFormData({
+                                                            type: 'entrada',
+                                                            amount: '',
+                                                            category: 'Limpeza (Cheques Clientes)',
+                                                            date: new Date().toISOString().split('T')[0],
+                                                            description: 'Depósito Cheque Cliente',
+                                                            status: 'pago',
+                                                            isRepeating: false,
+                                                            repeatDurationMode: 'indefinite',
+                                                            repeatDurationMonths: '4',
+                                                            accountId: 'acc_main',
+                                                            paidBy: 'esposa',
+                                                            isBusiness: true
+                                                        });
+                                                        setEditingId(null);
+                                                        setIsFormOpen(true);
+                                                    }}
+                                                    className="px-3 py-1.5 rounded-xl bg-indigo-600/40 hover:bg-indigo-600/60 text-indigo-200 border border-indigo-400/30 text-xs font-bold transition flex items-center gap-1.5 active:scale-95"
+                                                >
+                                                    <Plus size={14} /> Novo Lançamento
+                                                </button>
+                                            </div>
+
+                                            {/* Métricas do Negócio */}
+                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 relative z-10">
+                                                {/* 1. Faturamento Bruto */}
+                                                <div className="p-3.5 bg-slate-900/80 border border-slate-800 rounded-2xl">
+                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                                                        📥 Faturamento (Cheques)
+                                                    </span>
+                                                    <p className="text-base sm:text-lg font-black text-emerald-400">
+                                                        {formatCurrency(businessStats.grossRevenue)}
+                                                    </p>
+                                                    <span className="text-[9px] text-slate-500 font-bold block mt-0.5">
+                                                        Depósitos de clientes
+                                                    </span>
+                                                </div>
+
+                                                {/* 2. Repasse Meninas & Custos */}
+                                                <div className="p-3.5 bg-slate-900/80 border border-slate-800 rounded-2xl">
+                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                                                        👥 Repasse Ajudantes / Diárias
+                                                    </span>
+                                                    <p className="text-base sm:text-lg font-black text-rose-400">
+                                                        -{formatCurrency(businessStats.totalExpenses)}
+                                                    </p>
+                                                    <span className="text-[9px] text-slate-500 font-bold block mt-0.5">
+                                                        Zelle / pagamentos equipe
+                                                    </span>
+                                                </div>
+
+                                                {/* 3. Lucro Líquido Real */}
+                                                <div className="p-3.5 bg-indigo-950/70 border border-indigo-500/50 rounded-2xl shadow-inner">
+                                                    <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider block mb-1">
+                                                        💰 Lucro Líquido (Renda Real)
+                                                    </span>
+                                                    <p className={`text-base sm:text-lg font-black ${businessStats.netProfit >= 0 ? 'text-emerald-300' : 'text-rose-400'}`}>
+                                                        {formatCurrency(businessStats.netProfit)}
+                                                    </p>
+                                                    <span className="text-[9px] text-indigo-400 font-bold block mt-0.5">
+                                                        Margem: {businessStats.profitMargin.toFixed(0)}%
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            {/* Rodapé Informativo */}
+                                            <div className="mt-3.5 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-300">
+                                                <span className="flex items-center gap-1.5 text-indigo-300 font-semibold">
+                                                    <ShieldCheck size={14} className="text-emerald-400" />
+                                                    Apenas o Lucro Líquido de {formatCurrency(businessStats.netProfit > 0 ? businessStats.netProfit : 0)} entra na receita da família. Suas despesas do casal continuam 100% limpas!
+                                                </span>
                                             </div>
                                         </div>
 
@@ -6984,7 +6984,52 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                 {/* ==================================================== */}
                 {/* MODAIS (FORMULÁRIOS, FATURA, METAS, ETC.) */}
                 {/* ==================================================== */}
-                {/* Modal Formulário Lançamento */}
+                {/* Modal Confirmação de Exclusão de Lançamento */}
+                {transactionToDelete && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setTransactionToDelete(null)}></div>
+                        <div className="relative bg-white dark:bg-slate-900 w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 duration-200 border border-slate-100 dark:border-slate-800 z-10">
+                            <div className="w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center mb-4 mx-auto shadow-inner">
+                                <Trash2 size={24} />
+                            </div>
+                            <h3 className="text-lg font-black text-slate-800 dark:text-white text-center">
+                                Excluir Lançamento?
+                            </h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 text-center mt-1.5 mb-4 leading-relaxed">
+                                Tem certeza que deseja excluir <span className="font-bold text-slate-700 dark:text-slate-200">"{transactionToDelete.description}"</span> no valor de <span className="font-bold text-slate-700 dark:text-slate-200">{formatCurrency(transactionToDelete.amount)}</span>?
+                            </p>
+                            {transactionToDelete.isFromRepeatRule && (
+                                <label className="flex items-center gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/50 mb-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                                    <input
+                                        type="checkbox"
+                                        checked={cancelFutureRepeats}
+                                        onChange={(e) => setCancelFutureRepeats(e.target.checked)}
+                                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                    />
+                                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                                        Cancelar também a regra e lançamentos futuros
+                                    </span>
+                                </label>
+                            )}
+                            <div className="flex gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setTransactionToDelete(null)}
+                                    className="flex-1 py-3 px-4 rounded-2xl text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition active:scale-95"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={confirmDelete}
+                                    className="flex-1 py-3 px-4 rounded-2xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-lg shadow-rose-600/25 transition active:scale-95"
+                                >
+                                    Excluir
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* Modal Formulário Lançamento */}
                 {isFormOpen && (
