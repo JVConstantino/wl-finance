@@ -1012,18 +1012,39 @@ export default function App() {
         return () => clearTimeout(timer);
     }, []);
 
-    // Ajuste inicial: contas futuras recorrentes geradas iniciam como 'pendente' para não negativar o saldo bancário antecipadamente
+    // Ajuste e saneamento inicial: limpa transações auto-geradas indevidas em meses futuros e garante pendente
     useEffect(() => {
-        const todayStr = new Date().toISOString().split('T')[0];
+        const now = new Date();
+        const curYear = now.getFullYear();
+        const curMonth = now.getMonth(); // 0-indexed (8 para setembro)
+        const todayStr = now.toISOString().split('T')[0];
+
         setTransactions(prev => {
             let changed = false;
-            const updated = prev.map(t => {
-                if (t.isFromRepeatRule && t.type === 'saida' && t.status === 'pago' && t.date > todayStr && t.id.startsWith('tx_rep_')) {
+            // 1. Remove transações auto-geradas (tx_rep_ e tx_fin_) criadas em meses futuros ao navegar no calendário
+            const filtered = prev.filter(t => {
+                if (t.id && (t.id.startsWith('tx_rep_') || t.id.startsWith('tx_fin_'))) {
+                    if (t.date) {
+                        const [tY, tM] = t.date.split('-').map(Number);
+                        const isFutureMonth = tY > curYear || (tY === curYear && (tM - 1) > curMonth);
+                        if (isFutureMonth) {
+                            changed = true;
+                            return false;
+                        }
+                    }
+                }
+                return true;
+            });
+
+            // 2. Transações de contas fixas / recorrentes no mês atual com data futura iniciam como 'pendente'
+            const updated = filtered.map(t => {
+                if (t.id && (t.id.startsWith('tx_rep_') || t.id.startsWith('tx_fin_')) && t.status === 'pago' && t.date > todayStr) {
                     changed = true;
                     return { ...t, status: 'pendente' };
                 }
                 return t;
             });
+
             if (changed) {
                 try { localStorage.setItem('fp_transactions', JSON.stringify(updated)); } catch(e){}
                 return updated;
@@ -1032,11 +1053,12 @@ export default function App() {
         });
     }, []);
 
-    // Geração automática e garantia de persistência de gastos fixos / recorrentes (Aluguel, Seguro, etc.)
+    // Geração automática e garantia de persistência de gastos fixos / recorrentes apenas para o mês REAL atual
     useEffect(() => {
         if (!repeatingRules || repeatingRules.length === 0) return;
-        const curYear = currentDate.getFullYear();
-        const curMonth = currentDate.getMonth();
+        const now = new Date();
+        const curYear = now.getFullYear();
+        const curMonth = now.getMonth();
         const curMonthStr = String(curMonth + 1).padStart(2, '0');
         let hasNew = false;
         const toAdd = [];
@@ -1090,7 +1112,7 @@ export default function App() {
                 toAdd.forEach(t => syncUpsertTransaction(t, supabaseUser.id, activeFamilyCode, supabaseUser.email));
             }
         }
-    }, [repeatingRules, currentDate]);
+    }, [repeatingRules]);
 
     // Categorias Combinadas (Seguro contra qualquer formato de categoria)
     const allCategories = useMemo(() => {
@@ -1156,12 +1178,15 @@ export default function App() {
         return accounts.find(a => a.id === selectedAccountId) || null;
     }, [selectedAccountId, accounts]);
 
-    // Saldos das Contas
+    // Saldos das Contas (Saldo Real Hoje)
     const accountBalances = useMemo(() => {
+        const todayStr = new Date().toISOString().split('T')[0];
         const balances = {};
         accounts.forEach(acc => balances[acc.id] = 0);
         transactions.forEach(t => {
             if (t.status !== 'pago') return;
+            // Saldo atual no banco só computa o que foi pago até hoje (não antecipa meses futuros)
+            if (t.date && t.date > todayStr) return;
 
             if (t.type === 'transferencia') {
                 if (balances[t.sourceAccountId] !== undefined) balances[t.sourceAccountId] -= t.amount;
@@ -2093,11 +2118,13 @@ Mensagem do casal:
         };
     }, [financings]);
 
-    // Auto-provisionamento de parcelas de financiamento no mês ativo
+    // Auto-provisionamento de parcelas de financiamento no mês REAL atual
     useEffect(() => {
         if (!financings || financings.length === 0) return;
-        const year = currentDate.getFullYear();
-        const month = currentDate.getMonth();
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = now.getMonth();
+        const todayStr = now.toISOString().split('T')[0];
 
         financings.forEach(fin => {
             if (!fin.autoDebit) return;
@@ -2126,14 +2153,18 @@ Mensagem do casal:
                     category: fin.type === 'veiculo' ? 'Transporte' : (fin.type === 'imovel' ? 'Casa' : 'Outros'),
                     date: targetDate,
                     description: `${fin.title} ${installmentTag}`,
-                    status: 'pago',
+                    status: targetDate <= todayStr ? 'pago' : 'pendente',
                     accountId: fin.accountId || 'acc_main',
                     paidBy: fin.paidBy || 'conjunto'
                 };
-                setTransactions(prev => [autoTx, ...prev]);
+                setTransactions(prev => {
+                    const updated = [autoTx, ...prev];
+                    try { localStorage.setItem('fp_transactions', JSON.stringify(updated)); } catch(e){}
+                    return updated;
+                });
             }
         });
-    }, [currentDate, financings]);
+    }, [financings]);
 
     // Handlers de Financiamentos & Contratos
     const handleSaveFinancing = (e) => {
