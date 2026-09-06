@@ -4990,79 +4990,240 @@ Responda ESTRITAMENTE um objeto JSON no formato:
                                     </button>
                                 </div>
 
-                                <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2">
-                                    <button
-                                        onClick={() => setAnalysisView('mes')}
-                                        className={`px-4 py-2.5 text-xs font-bold rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 ${analysisView === 'mes' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
-                                    >
-                                        <PieChart size={14} /> Resumo do Mês
-                                    </button>
-                                    <button
-                                        onClick={() => setAnalysisView('comparativo')}
-                                        className={`px-4 py-2.5 text-xs font-bold rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 ${analysisView === 'comparativo' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
-                                    >
-                                        <BarChart3 size={14} /> Comparativo & Gastos Invisíveis
-                                    </button>
-                                    <button
-                                        onClick={() => setAnalysisView('liberdade')}
-                                        className={`px-4 py-2.5 text-xs font-bold rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 ${analysisView === 'liberdade' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
-                                    >
-                                        <Rocket size={14} className="text-amber-400" /> Liberdade FIRE
-                                    </button>
-                                    <button
-                                        onClick={() => setAnalysisView('desafios')}
-                                        className={`px-4 py-2.5 text-xs font-bold rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 ${analysisView === 'desafios' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
-                                    >
-                                        <Flame size={14} className="text-orange-400" /> Desafios ({coupleChallenges.filter(c => c.status === 'concluido').length}/{coupleChallenges.length})
-                                    </button>
-                                    <button
-                                        onClick={() => setAnalysisView('divisao')}
-                                        className={`px-4 py-2.5 text-xs font-bold rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 ${analysisView === 'divisao' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
-                                    >
-                                        <Scale size={14} /> Divisão do Casal
-                                    </button>
-                                    <button
-                                        onClick={() => setAnalysisView('conquistas')}
-                                        className={`px-4 py-2.5 text-xs font-bold rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 ${analysisView === 'conquistas' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
-                                    >
-                                        <Trophy size={14} className="text-amber-400" /> Conquistas ({coupleAchievements.unlockedCount}/{coupleAchievements.totalBadges})
-                                    </button>
-                                    <button
-                                        onClick={() => setAnalysisView('metas')}
-                                        className={`px-4 py-2.5 text-xs font-bold rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 ${analysisView === 'metas' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
-                                    >
-                                        <Target size={14} /> Metas e Limites
-                                    </button>
-                                    <button
-                                        onClick={() => setAnalysisView('assinaturas')}
-                                        className={`px-4 py-2.5 text-xs font-bold rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 ${analysisView === 'assinaturas' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
-                                    >
-                                        <Repeat size={14} /> Assinaturas & Fixos
-                                    </button>
-                                    <button
-                                        onClick={() => setAnalysisView('previsao')}
-                                        className={`px-4 py-2.5 text-xs font-bold rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 ${analysisView === 'previsao' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
-                                    >
-                                        <Sparkles size={14} /> Projeção 6 Meses
-                                    </button>
-                                    <button
-                                        onClick={() => setAnalysisView('financiamentos')}
-                                        className={`px-4 py-2.5 text-xs font-bold rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 ${analysisView === 'financiamentos' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
-                                    >
-                                        <Car size={14} className="text-blue-400" /> Financiamentos & Dívidas ({financingsSummary.activeCount})
-                                    </button>
-                                    <button
-                                        onClick={() => setIsFinbotChatOpen(true)}
-                                        className="px-4 py-2.5 text-xs font-black rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md hover:from-purple-700 hover:to-indigo-700 active:scale-95"
-                                    >
-                                        <Bot size={14} className="text-amber-300" /> Chat FinBot IA
-                                    </button>
-                                    <button
-                                        onClick={() => setIsReportModalOpen(true)}
-                                        className="px-4 py-2.5 text-xs font-black rounded-2xl whitespace-nowrap transition-all flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-md hover:from-emerald-700 hover:to-teal-800 active:scale-95 ml-auto"
-                                    >
-                                        <FileDown size={14} /> Relatório PDF
-                                    </button>
+                                <div className="bg-white dark:bg-slate-900/90 rounded-3xl p-4 sm:p-5 shadow-sm border border-slate-100 dark:border-slate-800/80 mb-6">
+                                    <div className="flex items-center justify-between mb-3 px-1">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse"></div>
+                                            <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                                Central de Análises & Ferramentas
+                                            </h3>
+                                        </div>
+                                        <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200/50 dark:border-blue-900/50">
+                                            {analysisView === 'mes' && '📊 Resumo do Mês'}
+                                            {analysisView === 'comparativo' && '📈 Comparativo & Invisíveis'}
+                                            {analysisView === 'liberdade' && '🚀 Liberdade FIRE'}
+                                            {analysisView === 'desafios' && '🔥 Desafios do Casal'}
+                                            {analysisView === 'divisao' && '⚖️ Divisão do Casal'}
+                                            {analysisView === 'conquistas' && '🏆 Conquistas & Medalhas'}
+                                            {analysisView === 'metas' && '🎯 Metas & Limites'}
+                                            {analysisView === 'assinaturas' && '🔄 Assinaturas & Fixos'}
+                                            {analysisView === 'previsao' && '✨ Projeção 6 Meses'}
+                                            {analysisView === 'financiamentos' && '🚗 Financiamentos & Dívidas'}
+                                        </span>
+                                    </div>
+
+                                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-2 sm:gap-2.5">
+                                        {/* 1. Resumo do Mês */}
+                                        <button
+                                            onClick={() => setAnalysisView('mes')}
+                                            className={`group relative flex flex-col items-center justify-center p-2.5 sm:p-3 rounded-2xl transition-all text-center ${
+                                                analysisView === 'mes'
+                                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25 ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-slate-900 scale-[1.02]'
+                                                    : 'bg-slate-50 dark:bg-slate-800/60 hover:bg-blue-50/50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700/50'
+                                            }`}
+                                        >
+                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-1.5 transition-transform group-hover:scale-110 ${
+                                                analysisView === 'mes' ? 'bg-white/20 text-white' : 'bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400'
+                                            }`}>
+                                                <PieChart size={18} />
+                                            </div>
+                                            <span className="text-[11px] font-bold leading-tight line-clamp-1">Resumo Mês</span>
+                                        </button>
+
+                                        {/* 2. Comparativo & Invisíveis */}
+                                        <button
+                                            onClick={() => setAnalysisView('comparativo')}
+                                            className={`group relative flex flex-col items-center justify-center p-2.5 sm:p-3 rounded-2xl transition-all text-center ${
+                                                analysisView === 'comparativo'
+                                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25 ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-slate-900 scale-[1.02]'
+                                                    : 'bg-slate-50 dark:bg-slate-800/60 hover:bg-emerald-50/50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700/50'
+                                            }`}
+                                        >
+                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-1.5 transition-transform group-hover:scale-110 ${
+                                                analysisView === 'comparativo' ? 'bg-white/20 text-white' : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400'
+                                            }`}>
+                                                <BarChart3 size={18} />
+                                            </div>
+                                            <span className="text-[11px] font-bold leading-tight line-clamp-1">Comparativo</span>
+                                        </button>
+
+                                        {/* 3. Liberdade FIRE */}
+                                        <button
+                                            onClick={() => setAnalysisView('liberdade')}
+                                            className={`group relative flex flex-col items-center justify-center p-2.5 sm:p-3 rounded-2xl transition-all text-center ${
+                                                analysisView === 'liberdade'
+                                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25 ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-slate-900 scale-[1.02]'
+                                                    : 'bg-slate-50 dark:bg-slate-800/60 hover:bg-amber-50/50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700/50'
+                                            }`}
+                                        >
+                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-1.5 transition-transform group-hover:scale-110 ${
+                                                analysisView === 'liberdade' ? 'bg-white/20 text-white' : 'bg-amber-100 dark:bg-amber-950 text-amber-600 dark:text-amber-400'
+                                            }`}>
+                                                <Rocket size={18} />
+                                            </div>
+                                            <span className="text-[11px] font-bold leading-tight line-clamp-1">Liberdade FIRE</span>
+                                        </button>
+
+                                        {/* 4. Desafios */}
+                                        <button
+                                            onClick={() => setAnalysisView('desafios')}
+                                            className={`group relative flex flex-col items-center justify-center p-2.5 sm:p-3 rounded-2xl transition-all text-center ${
+                                                analysisView === 'desafios'
+                                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25 ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-slate-900 scale-[1.02]'
+                                                    : 'bg-slate-50 dark:bg-slate-800/60 hover:bg-orange-50/50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700/50'
+                                            }`}
+                                        >
+                                            {coupleChallenges.length > 0 && (
+                                                <span className={`absolute top-1.5 right-1.5 px-1.5 py-0.2 rounded-full text-[9px] font-black ${
+                                                    analysisView === 'desafios' ? 'bg-white text-blue-600' : 'bg-orange-500 text-white'
+                                                }`}>
+                                                    {coupleChallenges.filter(c => c.status === 'concluido').length}/{coupleChallenges.length}
+                                                </span>
+                                            )}
+                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-1.5 transition-transform group-hover:scale-110 ${
+                                                analysisView === 'desafios' ? 'bg-white/20 text-white' : 'bg-orange-100 dark:bg-orange-950 text-orange-600 dark:text-orange-400'
+                                            }`}>
+                                                <Flame size={18} />
+                                            </div>
+                                            <span className="text-[11px] font-bold leading-tight line-clamp-1">Desafios</span>
+                                        </button>
+
+                                        {/* 5. Divisão do Casal */}
+                                        <button
+                                            onClick={() => setAnalysisView('divisao')}
+                                            className={`group relative flex flex-col items-center justify-center p-2.5 sm:p-3 rounded-2xl transition-all text-center ${
+                                                analysisView === 'divisao'
+                                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25 ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-slate-900 scale-[1.02]'
+                                                    : 'bg-slate-50 dark:bg-slate-800/60 hover:bg-purple-50/50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700/50'
+                                            }`}
+                                        >
+                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-1.5 transition-transform group-hover:scale-110 ${
+                                                analysisView === 'divisao' ? 'bg-white/20 text-white' : 'bg-purple-100 dark:bg-purple-950 text-purple-600 dark:text-purple-400'
+                                            }`}>
+                                                <Scale size={18} />
+                                            </div>
+                                            <span className="text-[11px] font-bold leading-tight line-clamp-1">Divisão Casal</span>
+                                        </button>
+
+                                        {/* 6. Conquistas */}
+                                        <button
+                                            onClick={() => setAnalysisView('conquistas')}
+                                            className={`group relative flex flex-col items-center justify-center p-2.5 sm:p-3 rounded-2xl transition-all text-center ${
+                                                analysisView === 'conquistas'
+                                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25 ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-slate-900 scale-[1.02]'
+                                                    : 'bg-slate-50 dark:bg-slate-800/60 hover:bg-yellow-50/50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700/50'
+                                            }`}
+                                        >
+                                            <span className={`absolute top-1.5 right-1.5 px-1.5 py-0.2 rounded-full text-[9px] font-black ${
+                                                analysisView === 'conquistas' ? 'bg-white text-blue-600' : 'bg-amber-500 text-white'
+                                            }`}>
+                                                {coupleAchievements.unlockedCount}/{coupleAchievements.totalBadges}
+                                            </span>
+                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-1.5 transition-transform group-hover:scale-110 ${
+                                                analysisView === 'conquistas' ? 'bg-white/20 text-white' : 'bg-yellow-100 dark:bg-yellow-950 text-yellow-600 dark:text-yellow-400'
+                                            }`}>
+                                                <Trophy size={18} />
+                                            </div>
+                                            <span className="text-[11px] font-bold leading-tight line-clamp-1">Conquistas</span>
+                                        </button>
+
+                                        {/* 7. Metas & Limites */}
+                                        <button
+                                            onClick={() => setAnalysisView('metas')}
+                                            className={`group relative flex flex-col items-center justify-center p-2.5 sm:p-3 rounded-2xl transition-all text-center ${
+                                                analysisView === 'metas'
+                                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25 ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-slate-900 scale-[1.02]'
+                                                    : 'bg-slate-50 dark:bg-slate-800/60 hover:bg-rose-50/50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700/50'
+                                            }`}
+                                        >
+                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-1.5 transition-transform group-hover:scale-110 ${
+                                                analysisView === 'metas' ? 'bg-white/20 text-white' : 'bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400'
+                                            }`}>
+                                                <Target size={18} />
+                                            </div>
+                                            <span className="text-[11px] font-bold leading-tight line-clamp-1">Metas & Limites</span>
+                                        </button>
+
+                                        {/* 8. Assinaturas & Fixos */}
+                                        <button
+                                            onClick={() => setAnalysisView('assinaturas')}
+                                            className={`group relative flex flex-col items-center justify-center p-2.5 sm:p-3 rounded-2xl transition-all text-center ${
+                                                analysisView === 'assinaturas'
+                                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25 ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-slate-900 scale-[1.02]'
+                                                    : 'bg-slate-50 dark:bg-slate-800/60 hover:bg-cyan-50/50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700/50'
+                                            }`}
+                                        >
+                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-1.5 transition-transform group-hover:scale-110 ${
+                                                analysisView === 'assinaturas' ? 'bg-white/20 text-white' : 'bg-cyan-100 dark:bg-cyan-950 text-cyan-600 dark:text-cyan-400'
+                                            }`}>
+                                                <Repeat size={18} />
+                                            </div>
+                                            <span className="text-[11px] font-bold leading-tight line-clamp-1">Assinaturas</span>
+                                        </button>
+
+                                        {/* 9. Projeção 6 Meses */}
+                                        <button
+                                            onClick={() => setAnalysisView('previsao')}
+                                            className={`group relative flex flex-col items-center justify-center p-2.5 sm:p-3 rounded-2xl transition-all text-center ${
+                                                analysisView === 'previsao'
+                                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25 ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-slate-900 scale-[1.02]'
+                                                    : 'bg-slate-50 dark:bg-slate-800/60 hover:bg-indigo-50/50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700/50'
+                                            }`}
+                                        >
+                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-1.5 transition-transform group-hover:scale-110 ${
+                                                analysisView === 'previsao' ? 'bg-white/20 text-white' : 'bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400'
+                                            }`}>
+                                                <Sparkles size={18} />
+                                            </div>
+                                            <span className="text-[11px] font-bold leading-tight line-clamp-1">Projeção 6M</span>
+                                        </button>
+
+                                        {/* 10. Financiamentos & Dívidas */}
+                                        <button
+                                            onClick={() => setAnalysisView('financiamentos')}
+                                            className={`group relative flex flex-col items-center justify-center p-2.5 sm:p-3 rounded-2xl transition-all text-center ${
+                                                analysisView === 'financiamentos'
+                                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25 ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-slate-900 scale-[1.02]'
+                                                    : 'bg-slate-50 dark:bg-slate-800/60 hover:bg-blue-50/50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700/50'
+                                            }`}
+                                        >
+                                            {financingsSummary.activeCount > 0 && (
+                                                <span className={`absolute top-1.5 right-1.5 px-1.5 py-0.2 rounded-full text-[9px] font-black ${
+                                                    analysisView === 'financiamentos' ? 'bg-white text-blue-600' : 'bg-blue-600 text-white'
+                                                }`}>
+                                                    {financingsSummary.activeCount}
+                                                </span>
+                                            )}
+                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-1.5 transition-transform group-hover:scale-110 ${
+                                                analysisView === 'financiamentos' ? 'bg-white/20 text-white' : 'bg-sky-100 dark:bg-sky-950 text-sky-600 dark:text-sky-400'
+                                            }`}>
+                                                <Car size={18} />
+                                            </div>
+                                            <span className="text-[11px] font-bold leading-tight line-clamp-1">Financiamentos</span>
+                                        </button>
+
+                                        {/* 11. Chat FinBot IA */}
+                                        <button
+                                            onClick={() => setIsFinbotChatOpen(true)}
+                                            className="group relative flex flex-col items-center justify-center p-2.5 sm:p-3 rounded-2xl transition-all text-center bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-md hover:shadow-lg hover:from-purple-700 hover:to-indigo-800 active:scale-95"
+                                        >
+                                            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center mb-1.5 transition-transform group-hover:scale-110">
+                                                <Bot size={18} className="text-amber-300" />
+                                            </div>
+                                            <span className="text-[11px] font-black leading-tight line-clamp-1">Chat FinBot</span>
+                                        </button>
+
+                                        {/* 12. Relatório PDF */}
+                                        <button
+                                            onClick={() => setIsReportModalOpen(true)}
+                                            className="group relative flex flex-col items-center justify-center p-2.5 sm:p-3 rounded-2xl transition-all text-center bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-md hover:shadow-lg hover:from-emerald-700 hover:to-teal-800 active:scale-95"
+                                        >
+                                            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center mb-1.5 transition-transform group-hover:scale-110">
+                                                <FileDown size={18} />
+                                            </div>
+                                            <span className="text-[11px] font-black leading-tight line-clamp-1">Relatório PDF</span>
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {analysisView === 'mes' && (
