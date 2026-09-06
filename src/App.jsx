@@ -242,6 +242,7 @@ export default function App() {
     const [toastMsg, setToastMsg] = useState('');
     const [deferredPrompt, setDeferredPrompt] = useState(null);
     const [isInstallable, setIsInstallable] = useState(false);
+    const [isInitializing, setIsInitializing] = useState(true);
 
     // 2. Estados de Navegação e Filtros
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -493,29 +494,76 @@ export default function App() {
             setIsCloudSyncing(true);
             const cloudData = await fetchAllUserData();
             if (cloudData) {
-                const cloudTxs = cloudData.transactions || [];
-                const cloudAccs = (cloudData.accounts && cloudData.accounts.length > 0) ? cloudData.accounts : defaultAccounts;
-                const cloudRules = cloudData.repeatingRules || [];
-                const cloudGoals = cloudData.monthlyGoals || {};
-                const cloudCats = cloudData.customCategories || [];
-                const cloudSavings = cloudData.savingsGoals || [];
-                const cloudShopping = cloudData.shoppingItems || [];
+                // Obter dados locais atuais para mesclagem sem perda
+                const localTxs = safeGet('fp_transactions', []);
+                const localRules = safeGet('fp_rules', []);
+                const localAccs = safeGet('fp_accounts', defaultAccounts);
+                const localGoals = safeGet('fp_goals', {});
+                const localCats = safeGet('fp_custom_categories', []);
+                const localSavings = safeGet('fp_savings_goals', []);
+                const localShopping = safeGet('fp_shopping_items', []);
 
-                setTransactions(cloudTxs);
-                setAccounts(cloudAccs);
-                setRepeatingRules(cloudRules);
-                setMonthlyGoals(cloudGoals);
-                setCustomCategories(cloudCats);
-                setSavingsGoals(cloudSavings);
-                setShoppingItems(cloudShopping);
+                // 1. Mesclar transações por ID único (prioriza transações existentes)
+                const mergedTxMap = new Map();
+                (localTxs || []).forEach(t => { if (t && t.id) mergedTxMap.set(t.id, t); });
+                (cloudData.transactions || []).forEach(t => { if (t && t.id) mergedTxMap.set(t.id, t); });
+                const finalTxs = Array.from(mergedTxMap.values());
 
-                localStorage.setItem('fp_transactions', JSON.stringify(cloudTxs));
-                localStorage.setItem('fp_accounts', JSON.stringify(cloudAccs));
-                localStorage.setItem('fp_rules', JSON.stringify(cloudRules));
-                localStorage.setItem('fp_goals', JSON.stringify(cloudGoals));
-                localStorage.setItem('fp_custom_categories', JSON.stringify(cloudCats));
-                localStorage.setItem('fp_savings_goals', JSON.stringify(cloudSavings));
-                localStorage.setItem('fp_shopping_items', JSON.stringify(cloudShopping));
+                // 2. Mesclar regras recorrentes / contas fixas
+                const mergedRulesMap = new Map();
+                (localRules || []).forEach(r => { if (r && r.id) mergedRulesMap.set(r.id, r); });
+                (cloudData.repeatingRules || []).forEach(r => { if (r && r.id) mergedRulesMap.set(r.id, r); });
+                const finalRules = Array.from(mergedRulesMap.values());
+
+                // 3. Mesclar contas
+                const mergedAccsMap = new Map();
+                (defaultAccounts || []).forEach(a => { if (a && a.id) mergedAccsMap.set(a.id, a); });
+                (localAccs || []).forEach(a => { if (a && a.id) mergedAccsMap.set(a.id, a); });
+                (cloudData.accounts || []).forEach(a => { if (a && a.id) mergedAccsMap.set(a.id, a); });
+                const finalAccs = Array.from(mergedAccsMap.values());
+
+                // 4. Mesclar metas
+                const finalGoals = { ...localGoals, ...(cloudData.monthlyGoals || {}) };
+
+                // 5. Mesclar categorias
+                const mergedCatsMap = new Map();
+                (localCats || []).forEach(c => { if (c && c.name) mergedCatsMap.set(c.name, c); });
+                (cloudData.customCategories || []).forEach(c => { if (c && c.name) mergedCatsMap.set(c.name, c); });
+                const finalCats = Array.from(mergedCatsMap.values());
+
+                // 6. Mesclar cofrinhos
+                const mergedSavingsMap = new Map();
+                (localSavings || []).forEach(s => { if (s && s.id) mergedSavingsMap.set(s.id, s); });
+                (cloudData.savingsGoals || []).forEach(s => { if (s && s.id) mergedSavingsMap.set(s.id, s); });
+                const finalSavings = Array.from(mergedSavingsMap.values());
+
+                // 7. Mesclar lista de mercado
+                const mergedShoppingMap = new Map();
+                (localShopping || []).forEach(s => { if (s && s.id) mergedShoppingMap.set(s.id, s); });
+                (cloudData.shoppingItems || []).forEach(s => { if (s && s.id) mergedShoppingMap.set(s.id, s); });
+                const finalShopping = Array.from(mergedShoppingMap.values());
+
+                setTransactions(finalTxs);
+                setAccounts(finalAccs);
+                setRepeatingRules(finalRules);
+                setMonthlyGoals(finalGoals);
+                setCustomCategories(finalCats);
+                setSavingsGoals(finalSavings);
+                setShoppingItems(finalShopping);
+
+                localStorage.setItem('fp_transactions', JSON.stringify(finalTxs));
+                localStorage.setItem('fp_accounts', JSON.stringify(finalAccs));
+                localStorage.setItem('fp_rules', JSON.stringify(finalRules));
+                localStorage.setItem('fp_goals', JSON.stringify(finalGoals));
+                localStorage.setItem('fp_custom_categories', JSON.stringify(finalCats));
+                localStorage.setItem('fp_savings_goals', JSON.stringify(finalSavings));
+                localStorage.setItem('fp_shopping_items', JSON.stringify(finalShopping));
+
+                // Sincronizar itens locais novos para a nuvem de forma transparente
+                if (user) {
+                    finalTxs.forEach(t => syncUpsertTransaction(t, user.id, activeFamilyCode, user.email));
+                    finalRules.forEach(r => syncUpsertRule(r, user.id, activeFamilyCode));
+                }
             }
             // Buscar dados da família / casal
             try {
@@ -963,6 +1011,66 @@ export default function App() {
         const timer = setTimeout(() => setIsInitializing(false), 300);
         return () => clearTimeout(timer);
     }, []);
+
+    // Geração automática e garantia de persistência de gastos fixos / recorrentes (Aluguel, Seguro, etc.)
+    useEffect(() => {
+        if (!repeatingRules || repeatingRules.length === 0) return;
+        const curYear = currentDate.getFullYear();
+        const curMonth = currentDate.getMonth();
+        const curMonthStr = String(curMonth + 1).padStart(2, '0');
+        let hasNew = false;
+        const toAdd = [];
+
+        repeatingRules.forEach(rule => {
+            if (rule.startDate && rule.durationMonths) {
+                const [sY, sM] = rule.startDate.split('-').map(Number);
+                const diff = (curYear - sY) * 12 + ((curMonth + 1) - sM);
+                if (diff < 0 || diff >= Number(rule.durationMonths)) return;
+            }
+
+            const alreadyExists = transactions.some(t => {
+                if (!t.date) return false;
+                const [tY, tM] = t.date.split('-').map(Number);
+                return (
+                    tY === curYear &&
+                    (tM - 1) === curMonth &&
+                    (t.isFromRepeatRule === rule.id || (t.description?.toLowerCase().trim() === rule.description?.toLowerCase().trim() && t.type === rule.type))
+                );
+            });
+
+            if (!alreadyExists) {
+                const dayNum = Math.min(Math.max(1, parseInt(rule.day, 10) || 1), 28);
+                const padDay = String(dayNum).padStart(2, '0');
+                const txDate = `${curYear}-${curMonthStr}-${padDay}`;
+                const autoTx = {
+                    id: `tx_rep_${rule.id}_${curYear}_${curMonthStr}`,
+                    type: rule.type,
+                    amount: Number(rule.amount),
+                    category: rule.category,
+                    date: txDate,
+                    description: rule.description,
+                    status: 'pago',
+                    accountId: rule.accountId || 'acc_main',
+                    paidBy: rule.paidBy || 'conjunto',
+                    isFromRepeatRule: rule.id,
+                    isBusiness: isBusinessTx(rule)
+                };
+                toAdd.push(autoTx);
+                hasNew = true;
+            }
+        });
+
+        if (hasNew && toAdd.length > 0) {
+            setTransactions(prev => {
+                const updated = [...toAdd, ...prev];
+                try { localStorage.setItem('fp_transactions', JSON.stringify(updated)); } catch(e){}
+                return updated;
+            });
+            if (supabaseUser) {
+                toAdd.forEach(t => syncUpsertTransaction(t, supabaseUser.id, activeFamilyCode, supabaseUser.email));
+            }
+        }
+    }, [repeatingRules, currentDate]);
 
     // Categorias Combinadas (Seguro contra qualquer formato de categoria)
     const allCategories = useMemo(() => {
@@ -3077,16 +3185,19 @@ Responda ESTRITAMENTE um objeto JSON no formato:
         return Array.from({ length: firstDayIndex }, (_, i) => i);
     }, [currentDate]);
 
-    // Ações de Transações
+    // Ações de Transações com Persistência Imediata (LocalStorage + Supabase)
     const saveTransaction = (tData) => {
         setTransactions(prev => {
             const idx = prev.findIndex(item => item.id === tData.id);
+            let updated;
             if (idx >= 0) {
-                const updated = [...prev];
+                updated = [...prev];
                 updated[idx] = tData;
-                return updated;
+            } else {
+                updated = [tData, ...prev];
             }
-            return [tData, ...prev];
+            try { localStorage.setItem('fp_transactions', JSON.stringify(updated)); } catch(e){}
+            return updated;
         });
 
         if (supabaseUser) {
@@ -3095,7 +3206,11 @@ Responda ESTRITAMENTE um objeto JSON no formato:
     };
 
     const deleteTransaction = (id) => {
-        setTransactions(prev => prev.filter(t => t.id !== id));
+        setTransactions(prev => {
+            const updated = prev.filter(t => t.id !== id);
+            try { localStorage.setItem('fp_transactions', JSON.stringify(updated)); } catch(e){}
+            return updated;
+        });
 
         if (supabaseUser) {
             syncDeleteTransaction(id, supabaseUser.id);
@@ -3105,12 +3220,15 @@ Responda ESTRITAMENTE um objeto JSON no formato:
     const saveRule = (rData) => {
         setRepeatingRules(prev => {
             const idx = prev.findIndex(item => item.id === rData.id);
+            let updated;
             if (idx >= 0) {
-                const updated = [...prev];
+                updated = [...prev];
                 updated[idx] = rData;
-                return updated;
+            } else {
+                updated = [...prev, rData];
             }
-            return [...prev, rData];
+            try { localStorage.setItem('fp_rules', JSON.stringify(updated)); } catch(e){}
+            return updated;
         });
 
         if (supabaseUser) {
@@ -3119,7 +3237,11 @@ Responda ESTRITAMENTE um objeto JSON no formato:
     };
 
     const deleteRule = (ruleId) => {
-        setRepeatingRules(prev => prev.filter(r => r.id !== ruleId));
+        setRepeatingRules(prev => {
+            const updated = prev.filter(r => r.id !== ruleId);
+            try { localStorage.setItem('fp_rules', JSON.stringify(updated)); } catch(e){}
+            return updated;
+        });
 
         if (supabaseUser) {
             syncDeleteRule(ruleId, supabaseUser.id);
@@ -3165,9 +3287,32 @@ Responda ESTRITAMENTE um objeto JSON no formato:
         };
 
         saveRule(ruleData);
+
+        // Gerar e salvar imediatamente a transação correspondente para o mês ativo
+        const curYear = currentDate.getFullYear();
+        const curMonth = currentDate.getMonth();
+        const curMonthStr = String(curMonth + 1).padStart(2, '0');
+        const dayNum = Math.min(Math.max(1, parseInt(ruleData.day, 10) || 1), 28);
+        const padDay = String(dayNum).padStart(2, '0');
+        const txDate = `${curYear}-${curMonthStr}-${padDay}`;
+        const autoTx = {
+            id: `tx_rep_${ruleData.id}_${curYear}_${curMonthStr}`,
+            type: ruleData.type,
+            amount: Number(ruleData.amount),
+            category: ruleData.category,
+            date: txDate,
+            description: ruleData.description,
+            status: 'pago',
+            accountId: ruleData.accountId || 'acc_main',
+            paidBy: ruleData.paidBy || 'conjunto',
+            isFromRepeatRule: ruleData.id,
+            isBusiness: false
+        };
+        saveTransaction(autoTx);
+
         setIsFixedBillsModalOpen(false);
         setFixedBillEditing(null);
-        showToast(fixedBillForm.id ? 'Conta fixa atualizada!' : 'Conta fixa cadastrada com sucesso!');
+        showToast(fixedBillForm.id ? 'Conta fixa atualizada!' : 'Conta fixa cadastrada e salva com sucesso!');
     };
 
     const handleRenewFixedBill = (e) => {
